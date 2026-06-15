@@ -5,7 +5,12 @@
       "Bash(uv sync:*)",
       "Bash(uv run python -c ':*)",
       "Bash(uv run:*)",
-      "Bash(.venv/Scripts/python.exe -c \"import named_model_resolution; import orchestrator; print\\('Both packages import OK'\\)\")"
+      "Bash(.venv/Scripts/python.exe -c \"import named_model_resolution; import orchestrator; print\\('Both packages import OK'\\)\")",
+      "Bash(.venv/Scripts/python.exe -c ':*)",
+      "Bash(.venv/Scripts/pip install:*)",
+      "Bash(uv pip:*)",
+      "Bash(.venv/Scripts/python.exe -c \"import orchestrator; print\\(orchestrator.__file__\\)\")",
+      "Bash(.venv/Scripts/python.exe -c \"import orchestrator; import sys; [print\\(p\\) for p in sys.path if 'orchestrator' in p.lower\\(\\) or 'site-packages' in p.lower\\(\\)]\")"
     ]
   }
 }

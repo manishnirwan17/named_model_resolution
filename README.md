@@ -23,7 +23,7 @@ uv sync          # installs both packages + all deps into .venv
 
 ### Option B — Databricks / pip editable install
 
-Install the two packages in order (orchestrator depends on the library):
+**Install in this order** (orchestrator depends on the library, so the library must go first):
 
 ```bash
 # from the repo root
@@ -31,16 +31,15 @@ pip install -e named_model_resolution/
 pip install -e orchestrator/
 ```
 
-Or in a Databricks notebook (**must be the first cell**):
+In a Databricks notebook, both installs must be in the **same `%pip` cell** (each `%pip` cell restarts the kernel, so splitting them loses the first install):
 
 ```python
-# Cell 1 — run once, then restart kernel
+# Cell 1 — must be the very first cell; run once per cluster restart
 repo = "/Workspace/Users/your-user/named_model_resolution"
-%pip install -e {repo}/named_model_resolution
-%pip install -e {repo}/orchestrator
+%pip install -e {repo}/named_model_resolution -e {repo}/orchestrator
 ```
 
-After the `%pip` cell Databricks automatically restarts the Python kernel.
+After this cell Databricks automatically restarts the Python kernel.
 All subsequent cells import normally.
 
 > **Python version:** Requires ≥ 3.10. Tested on DBR 14.x (Python 3.10) and 15.x (Python 3.11).
