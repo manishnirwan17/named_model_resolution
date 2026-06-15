@@ -60,7 +60,7 @@ pharma_knowledge_base/
     transform_rules.yaml          ← statistical transform heuristics
 
 named_model_resolution/           ← config-builder library (uv workspace member)
-  src/named_model_resolution/
+  named_model_resolution/         ← Python package (flat layout — no src/ layer)
     models.py                     ← all dataclasses (ColumnSpec, RouterResult, etc.)
     catalog_parser.py             ← parse gold_layer_datamarts.csv → DatamartCatalog
     column_matcher.py             ← Layer 2: fuzzy + abbreviation-aware matching
@@ -68,7 +68,7 @@ named_model_resolution/           ← config-builder library (uv workspace membe
     config_assembler.py           ← Layer 3: fact + dims + routing rules → ModelConfig list
 
 orchestrator/                     ← orchestration package (uv workspace member)
-  src/orchestrator/
+  orchestrator/                   ← Python package (flat layout — no src/ layer)
     connectors/
       base.py                     ← CatalogConnector Protocol (platform-agnostic)
       file_connector.py           ← CSV/Parquet from a directory

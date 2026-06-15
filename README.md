@@ -21,28 +21,63 @@ cd named_model_resolution
 uv sync          # installs both packages + all deps into .venv
 ```
 
-### Option B — Databricks / pip editable install
+### Option B — Databricks notebook (recommended pattern)
 
-**Install in this order** (orchestrator depends on the library, so the library must go first):
-
-```bash
-# from the repo root
-pip install -e named_model_resolution/
-pip install -e orchestrator/
-```
-
-In a Databricks notebook, both installs must be in the **same `%pip` cell** (each `%pip` cell restarts the kernel, so splitting them loses the first install):
+The standard `%pip` magic restarts the kernel automatically and is the simplest approach.
+Both packages must be in the **same `%pip` cell** (each `%pip` restarts the kernel, so splitting them loses the first install):
 
 ```python
-# Cell 1 — must be the very first cell; run once per cluster restart
+# Cell 1 — must be the very first cell; Databricks restarts the kernel after this
 repo = "/Workspace/Users/your-user/named_model_resolution"
-%pip install -e {repo}/named_model_resolution -e {repo}/orchestrator
+%pip install -e {repo}/named_model_resolution -e {repo}/orchestrator databricks-sqlalchemy
 ```
 
-After this cell Databricks automatically restarts the Python kernel.
-All subsequent cells import normally.
+All subsequent cells import normally after the restart.
 
-> **Python version:** Requires ≥ 3.10. Tested on DBR 14.x (Python 3.10) and 15.x (Python 3.11).
+---
+
+### Option C — Databricks notebook (no kernel restart, `subprocess` pattern)
+
+If you need to install without restarting (e.g. inside a job or a shared setup cell),
+use `subprocess` **and** manually add the `src/` directories to `sys.path` afterward.
+`subprocess pip install` writes the `.pth` files but Python's `sys.path` is already
+frozen at kernel startup — it won't re-read them mid-session.
+
+```python
+import subprocess, sys, importlib
+
+# Resolve repo root from the notebook's own path (works for any user/clone location)
+_ctx = dbutils.notebook.entry_point.getDbutils().notebook().getContext()
+_nb_path = _ctx.notebookPath().get()
+_repo_root = "/Workspace" + "/".join(_nb_path.split("/")[:-1])
+
+print(f"Repo root: {_repo_root}")
+
+# 1. Install deps that aren't in sys.path yet (sqlalchemy, scipy, etc.)
+subprocess.check_call([sys.executable, "-m", "pip", "install",
+                       "databricks-sqlalchemy", "scipy", "--quiet"])
+
+# 2. Add the project directories directly — bypasses the .pth file mechanism entirely
+for pkg in ("named_model_resolution", "orchestrator"):
+    pkg_path = f"{_repo_root}/{pkg}"
+    if pkg_path not in sys.path:
+        sys.path.insert(0, pkg_path)
+
+# 3. Tell Python to re-scan for newly visible modules
+importlib.invalidate_caches()
+
+print("sys.path updated — imports are ready")
+```
+
+Then in the next cell, imports work immediately without a restart:
+
+```python
+from named_model_resolution.catalog_parser import parse_catalog
+from orchestrator.connectors import FileCatalogConnector, SQLCatalogConnector
+from orchestrator.router import Router
+```
+
+> **Python version:** Requires ≥ 3.10. Databricks Runtime 14.x = Python 3.10, 15.x = Python 3.12.
 
 ---
 
