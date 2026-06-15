@@ -1,0 +1,128 @@
+# Curated candidate lists for semantic subtype matching.
+# Expand these lists as new datasets are explored — do not bury logic in code.
+
+geography_candidates:
+  - territory
+  - terr
+  - zip
+  - zip_code
+  - region
+  - state
+  - country
+  - market
+  - territory_id
+  - geo
+  - district
+  - area
+  - zone
+  - brick
+  - alignment
+
+date_candidates:
+  - week_end_date
+  - month_end_date
+  - period
+  - fill_date
+  - fill_month
+  - fill_year
+  - fill_quarter
+  - service_date
+  - switch_date
+  - first_diagnosis_date
+  - first_rx_date
+  - latest_rx_date
+  - date
+  - week
+  - month
+  - year
+  - quarter
+  - rx_date
+  - event_date
+  - start_date
+  - end_date
+  - report_date
+  - as_of_date
+  - snapshot_date
+
+measure_candidates:
+  - persistency
+  - trx
+  - nrx
+  - nbrx
+  - total_claims
+  - adherence_ratio
+  - fulfillment_rate
+  - rejection_rate
+  - reversal_rate
+  - approval_rate
+  - market_share
+  - trx_count
+  - nrx_count
+  - patient_count
+  - net_flow
+  - persistence_days
+  - gap_days
+  - total_fills
+  - total_days_supply
+  - avg_days_supply
+  - quantity
+  - days_supply
+  - patient_oop
+  - patient_responsibility
+  - total_oop
+  - avg_oop
+  - total_patient_responsibility
+  - days_to_fill
+  - inflow_flag  # treated as count-style measure when numeric
+  - outflow_flag
+  - total_patients
+  - diagnosed_patients
+  - treated_patients
+  - unprojected_market_size
+  - projected_market_size
+  - share_of_new_patients
+  - drug_holiday_patients
+  - days_on_source_drug
+  - gap_days_before_event
+  - persistency_at_switch
+  - time_in_line_days
+  - paid_claims
+  - rejected_claims
+  - reversed_claims
+  - adherence_ratio
+  - days_on_therapy
+  - dot
+
+# Suffixes/prefixes used for key detection (checked against column name)
+key_candidates_suffixes:
+  - _sk
+  - _id
+  - _npi
+  - _code
+  - _key
+
+# Flag column patterns
+flag_prefixes:
+  - is_
+  - has_
+
+flag_suffixes:
+  - _flag
+  - _indicator
+  - _ind
+
+# Segment/status subtypes — used for PSI routing
+segment_candidates:
+  - patient_status
+  - treatment_status
+  - line_of_therapy
+  - segment
+  - seg
+  - cohort
+  - category
+  - payer_channel
+  - plan_type
+  - specialty
+  - indication_flag
+  - event_type
+  - previous_status

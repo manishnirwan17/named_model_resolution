@@ -1,0 +1,38 @@
+# Abbreviation expansion map — append as new client datasets reveal new patterns.
+# Keys are normalized (lowercased) abbreviations found in column names.
+# Values are the canonical names used in candidate lists.
+
+wk_end: week_end_date
+wk: week
+mth: month
+qtr: quarter
+yr: year
+trx: trx
+nbrx: nbrx
+nbx: nbrx
+rx: trx
+prod: product
+pt: patient
+hcp: provider
+geo: territory
+terr: territory
+prdct: product
+prscbr: prescriber
+phrmcy: pharmacy
+pat: patient
+diag: diagnosis
+dx: diagnosis
+ndx: nbrx
+payer_chnl: payer_channel
+chnl: channel
+mkt: market
+seg: segment
+rx_dt: fill_date
+svc_dt: service_date
+fill_dt: fill_date
+srvc_dt: service_date
+persistency_pct: persistency
+adhr: adherence_ratio
+adh: adherence_ratio
+dot: days_on_therapy
+lot: line_of_therapy

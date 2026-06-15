@@ -1,0 +1,87 @@
+# Model routing rules.
+# Each model declares the column subtypes it requires, optionally uses, and accepts as fallback.
+# Adding a new model = add an entry here + create a pipeline file. No core code changes needed.
+#
+# Scoring formula (in config_assembler.py):
+#   score = (required subtypes satisfied * 1.0)
+#         + (optional subtypes present * 0.3)
+#         + (preferred_measures matched * 0.5)
+# A model is only a candidate when ALL required subtypes are satisfied.
+
+BOCPD:
+  required:
+    - date
+    - measure
+  optional:
+    - geography
+  accepts:
+    - unclassified_metric
+  preferred_measures:
+    - persistency
+    - trx
+    - nrx
+    - nbrx
+    - adherence_ratio
+    - total_claims
+  description: "Trend-shift (changepoint) detection on weekly time series"
+  use_case_hints:
+    - "Weekly persistency trend across territory (Patient Analytics)"
+    - "Weekly TRx/NRx trend across territory (Provider Analytics)"
+
+MMM:
+  required:
+    - date
+    - measure
+  optional:
+    - geography
+    - segment
+  accepts:
+    - unclassified_metric
+  preferred_measures:
+    - trx
+    - nrx
+    - total_claims
+    - market_share
+  description: "Marketing mix attribution on spend/channel-driven facts"
+  use_case_hints:
+    - "Decompose sales drivers across payer channels"
+    - "Estimate ROI of promotional spend"
+
+PSI:
+  required:
+    - date
+    - measure
+    - segment
+  optional:
+    - geography
+  accepts:
+    - unclassified_metric
+  preferred_measures:
+    - patient_count
+    - total_patients
+    - treated_patients
+    - net_flow
+  description: "Population / segment drift detection"
+  use_case_hints:
+    - "Detect shifts in patient segment distribution over time"
+    - "Monitor drug holiday or LOT progression drift"
+
+ARIMA:
+  required:
+    - date
+    - measure
+  optional:
+    - geography
+  accepts:
+    - unclassified_metric
+  preferred_measures:
+    - trx
+    - nrx
+    - persistency
+    - market_share
+    - patient_count
+  description: "Seasonal trend modeling (ARIMA / SARIMA / Prophet)"
+  note: "Fallback time-series model when BOCPD has no clear changepoint hypothesis"
+  use_case_hints:
+    - "Forecast weekly TRx over next N periods"
+    - "Decompose seasonality in market size"

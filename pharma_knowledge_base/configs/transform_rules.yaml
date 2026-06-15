@@ -1,0 +1,59 @@
+# Statistical transformation heuristic rules.
+# The profiler evaluates these against each column's computed stats
+# and appends matching suggestion strings to ColumnProfile.suggested_transforms.
+
+log_transform:
+  trigger:
+    skewness_gt: 1.5
+  applies_to:
+    - measure
+    - unclassified_metric
+  suggestion: "log1p(column) — right-skewed distribution detected"
+
+outlier_clip:
+  trigger:
+    kurtosis_gt: 5.0
+  applies_to:
+    - measure
+    - unclassified_metric
+  suggestion: "clip at 1st/99th percentile before further transforms"
+
+weekly_aggregation:
+  trigger:
+    date_grain: daily
+    model_in:
+      - BOCPD
+      - ARIMA
+  applies_to:
+    - date
+  suggestion: "resample to W-SAT, aggregate measures by sum (or mean for ratios)"
+
+null_imputation:
+  trigger:
+    null_pct_gt: 0.05
+  applies_to:
+    - measure
+    - unclassified_metric
+    - date
+  suggestion: "forward-fill or median imputation — null rate exceeds 5%"
+
+high_cardinality_encode:
+  trigger:
+    unique_count_gt: 50
+    dtype: object
+  applies_to:
+    - dimension_attribute
+    - segment
+  suggestion: "consider target encoding or embedding — high-cardinality categorical"
+
+ratio_bound_check:
+  trigger:
+    value_max_gt: 1.0
+  applies_to:
+    - measure
+  column_name_contains:
+    - rate
+    - ratio
+    - pct
+    - share
+  suggestion: "values > 1.0 found in ratio column — check for scale mismatch (may need /100)"

@@ -1,0 +1,8 @@
+[tool.uv.workspace]
+members = [
+    "named_model_resolution",
+    "orchestrator",
+]
+
+[tool.uv.sources]
+named-model-resolution = { workspace = true }
