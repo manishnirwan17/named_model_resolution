@@ -12,31 +12,31 @@ A **heuristics-based, data-aware config-builder and model router** that ingests 
 
 ## Development Setup
 
-This project uses **`uv`** (Python 3.13) with a **workspace** of two installable packages.
+Single `pyproject.toml` at repo root. Both `named_model_resolution/` and `orchestrator/` are Python packages directly at repo root — no sub-project folders, no `src/` layer.
 
 ```bash
-uv sync                                  # install all workspace deps
-uv run python main.py --help             # see CLI options
-uv run python main.py \
+pip install -e .                          # one command installs both packages
+python main.py --help                     # see CLI options
+python main.py \
     --catalog-type file \
     --catalog-path ./sample_data/ \
-    --output-dir ./output/               # run the router on local files
+    --output-dir ./output/                # run the router on local files
 
-uv run pytest                            # run all tests
-uv run pytest tests/test_catalog_parser.py  # single test file
+pytest                                    # run all tests
+pytest tests/test_catalog_parser.py      # single test file
 ```
 
 Quick verification snippets:
 ```bash
 # Verify spec parsing → should print 10 datamart names
-uv run python -c "
+python -c "
 from named_model_resolution.catalog_parser import parse_catalog
 c = parse_catalog('pharma_knowledge_base/gold_layer_datamarts.csv')
 print(list(c.datamarts.keys()))
 "
 
 # Verify column matching with abbreviations + guardrail
-uv run python -c "
+python -c "
 from named_model_resolution.column_matcher import ColumnMatcher
 m = ColumnMatcher('pharma_knowledge_base/configs')
 w = []
@@ -44,6 +44,15 @@ specs = m.match_all({'WK_END':'date','TRX':'float','MYSTERY':'float','PROD_CODE'
 for s in specs: print(s.name, '->', s.semantic_subtype, f'({s.match_source}, conf={s.confidence})')
 print('WARNINGS:', w)
 "
+```
+
+On Databricks (subprocess pattern — no kernel restart):
+```python
+import subprocess, sys, importlib
+_repo = "/Workspace/Users/your-user/named_model_resolution"
+subprocess.check_call([sys.executable, "-m", "pip", "install", "-e", _repo, "--quiet"])
+sys.path.insert(0, _repo)
+importlib.invalidate_caches()
 ```
 
 ---
@@ -59,29 +68,27 @@ pharma_knowledge_base/
     model_routing.yaml            ← per-model routing rules (add new models here)
     transform_rules.yaml          ← statistical transform heuristics
 
-named_model_resolution/           ← config-builder library (uv workspace member)
-  named_model_resolution/         ← Python package (flat layout — no src/ layer)
-    models.py                     ← all dataclasses (ColumnSpec, RouterResult, etc.)
-    catalog_parser.py             ← parse gold_layer_datamarts.csv → DatamartCatalog
-    column_matcher.py             ← Layer 2: fuzzy + abbreviation-aware matching
-    classifier.py                 ← Layer 1: table → fact | dimension
-    config_assembler.py           ← Layer 3: fact + dims + routing rules → ModelConfig list
+named_model_resolution/           ← Python package (directly at repo root)
+  models.py                       ← all dataclasses (ColumnSpec, RouterResult, etc.)
+  catalog_parser.py               ← parse gold_layer_datamarts.csv → DatamartCatalog
+  column_matcher.py               ← Layer 2: fuzzy + abbreviation-aware matching
+  classifier.py                   ← Layer 1: table → fact | dimension
+  config_assembler.py             ← Layer 3: fact + dims + routing rules → ModelConfig list
 
-orchestrator/                     ← orchestration package (uv workspace member)
-  orchestrator/                   ← Python package (flat layout — no src/ layer)
-    connectors/
-      base.py                     ← CatalogConnector Protocol (platform-agnostic)
-      file_connector.py           ← CSV/Parquet from a directory
-      sql_connector.py            ← SQLAlchemy (Databricks SQL, Postgres, etc.)
-    profiler.py                   ← sample N rows → ColumnProfile (skewness, grain, transforms)
-    router.py                     ← crawl → classify → route → profile → RouterResult list
-    pipelines/
-      base.py                     ← ModelPipeline ABC (detect → prep → transform → tune)
-      bocpd_pipeline.py
-      mmm_pipeline.py
-      psi_pipeline.py
-      arima_pipeline.py
-      __init__.py                 ← PIPELINE_REGISTRY dict
+orchestrator/                     ← Python package (directly at repo root)
+  connectors/
+    base.py                       ← CatalogConnector Protocol (platform-agnostic)
+    file_connector.py             ← CSV/Parquet from a directory
+    sql_connector.py              ← SQLAlchemy (Databricks SQL, Postgres, etc.)
+  profiler.py                     ← sample N rows → ColumnProfile (skewness, grain, transforms)
+  router.py                       ← crawl → classify → route → profile → RouterResult list
+  pipelines/
+    base.py                       ← ModelPipeline ABC (detect → prep → transform → tune)
+    bocpd_pipeline.py
+    mmm_pipeline.py
+    psi_pipeline.py
+    arima_pipeline.py
+    __init__.py                   ← PIPELINE_REGISTRY dict
 
 main.py                           ← CLI entry point
 ```
@@ -123,8 +130,8 @@ Returns a ranked list of `ModelConfig`s (all candidates, not just top-1). Caller
 
 To add a new model (e.g., Prophet, NeuralProphet, Causal Impact):
 1. Add a routing rule block to `pharma_knowledge_base/configs/model_routing.yaml`
-2. Create `orchestrator/src/orchestrator/pipelines/<model>_pipeline.py` implementing `ModelPipeline`
-3. Register it in `orchestrator/src/orchestrator/pipelines/__init__.py` → `PIPELINE_REGISTRY`
+2. Create `orchestrator/pipelines/<model>_pipeline.py` implementing `ModelPipeline`
+3. Register it in `orchestrator/pipelines/__init__.py` → `PIPELINE_REGISTRY`
 
 No changes to the router, classifier, or column matcher are needed.
 

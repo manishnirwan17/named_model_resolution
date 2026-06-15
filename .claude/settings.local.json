@@ -12,7 +12,15 @@
       "Bash(.venv/Scripts/python.exe -c \"import orchestrator; print\\(orchestrator.__file__\\)\")",
       "Bash(.venv/Scripts/python.exe -c \"import orchestrator; import sys; [print\\(p\\) for p in sys.path if 'orchestrator' in p.lower\\(\\) or 'site-packages' in p.lower\\(\\)]\")",
       "Bash(cp -r 'C:/Users/AadityaVardhanDas/OneDrive - ProcDNA Analytics Pvt. Ltd/named_model_resolution/named_model_resolution/src/named_model_resolution' 'C:/Users/AadityaVardhanDas/OneDrive - ProcDNA Analytics Pvt. Ltd/named_model_resolution/named_model_resolution/named_model_resolution')",
-      "Bash(cp -r 'C:/Users/AadityaVardhanDas/OneDrive - ProcDNA Analytics Pvt. Ltd/named_model_resolution/orchestrator/src/orchestrator' 'C:/Users/AadityaVardhanDas/OneDrive - ProcDNA Analytics Pvt. Ltd/named_model_resolution/orchestrator/orchestrator')"
+      "Bash(cp -r 'C:/Users/AadityaVardhanDas/OneDrive - ProcDNA Analytics Pvt. Ltd/named_model_resolution/orchestrator/src/orchestrator' 'C:/Users/AadityaVardhanDas/OneDrive - ProcDNA Analytics Pvt. Ltd/named_model_resolution/orchestrator/orchestrator')",
+      "Bash(cp -r 'C:/Users/AadityaVardhanDas/OneDrive - ProcDNA Analytics Pvt. Ltd/named_model_resolution/named_model_resolution/named_model_resolution/named_model_resolution/.' 'C:/Users/AadityaVardhanDas/OneDrive - ProcDNA Analytics Pvt. Ltd/named_model_resolution/named_model_resolution/named_model_resolution/')",
+      "Bash(cp -r 'C:/Users/AadityaVardhanDas/OneDrive - ProcDNA Analytics Pvt. Ltd/named_model_resolution/orchestrator/orchestrator/.' 'C:/Users/AadityaVardhanDas/OneDrive - ProcDNA Analytics Pvt. Ltd/named_model_resolution/orchestrator/')",
+      "Bash(cp:*)",
+      "Bash(echo \"Removed old project folder, exit: $?\")",
+      "Bash(echo \"Renamed _nmr_tmp to named_model_resolution, exit: $?\")",
+      "Bash(find 'C:/Users/AadityaVardhanDas/OneDrive - ProcDNA Analytics Pvt. Ltd/named_model_resolution/named_model_resolution' -name __pycache__ -type d -exec rm -rf '{}' +)",
+      "Bash(pip install:*)",
+      "Bash(python -c ':*)"
     ]
   }
 }

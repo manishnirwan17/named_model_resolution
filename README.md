@@ -13,23 +13,27 @@ A **data-aware model router** for pharma analytics gold-layer datasets. Give it 
 
 ## Installation
 
-### Option A — Local development (uv)
+### Option A — Local development
 
 ```bash
 git clone <repo>
 cd named_model_resolution
-uv sync          # installs both packages + all deps into .venv
+pip install -e .          # installs both packages + all deps
+```
+
+Or with `uv`:
+```bash
+uv pip install -e .
 ```
 
 ### Option B — Databricks notebook (recommended pattern)
 
-The standard `%pip` magic restarts the kernel automatically and is the simplest approach.
-Both packages must be in the **same `%pip` cell** (each `%pip` restarts the kernel, so splitting them loses the first install):
+The standard `%pip` magic restarts the kernel automatically and is the simplest approach:
 
 ```python
 # Cell 1 — must be the very first cell; Databricks restarts the kernel after this
 repo = "/Workspace/Users/your-user/named_model_resolution"
-%pip install -e {repo}/named_model_resolution -e {repo}/orchestrator databricks-sqlalchemy
+%pip install -e {repo}
 ```
 
 All subsequent cells import normally after the restart.
@@ -39,9 +43,9 @@ All subsequent cells import normally after the restart.
 ### Option C — Databricks notebook (no kernel restart, `subprocess` pattern)
 
 If you need to install without restarting (e.g. inside a job or a shared setup cell),
-use `subprocess` **and** manually add the `src/` directories to `sys.path` afterward.
-`subprocess pip install` writes the `.pth` files but Python's `sys.path` is already
-frozen at kernel startup — it won't re-read them mid-session.
+use `subprocess` **and** manually add the repo root to `sys.path` afterward.
+`subprocess pip install` writes the `.pth` file but Python's `sys.path` is already
+frozen at kernel startup — it won't re-read it mid-session.
 
 ```python
 import subprocess, sys, importlib
@@ -53,15 +57,12 @@ _repo_root = "/Workspace" + "/".join(_nb_path.split("/")[:-1])
 
 print(f"Repo root: {_repo_root}")
 
-# 1. Install deps that aren't in sys.path yet (sqlalchemy, scipy, etc.)
-subprocess.check_call([sys.executable, "-m", "pip", "install",
-                       "databricks-sqlalchemy", "scipy", "--quiet"])
+# 1. Install the package (writes .pth but sys.path is already frozen)
+subprocess.check_call([sys.executable, "-m", "pip", "install", "-e", _repo_root, "--quiet"])
 
-# 2. Add the project directories directly — bypasses the .pth file mechanism entirely
-for pkg in ("named_model_resolution", "orchestrator"):
-    pkg_path = f"{_repo_root}/{pkg}"
-    if pkg_path not in sys.path:
-        sys.path.insert(0, pkg_path)
+# 2. Add repo root directly so both packages are importable immediately
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
 
 # 3. Tell Python to re-scan for newly visible modules
 importlib.invalidate_caches()
@@ -85,25 +86,25 @@ from orchestrator.router import Router
 
 ```bash
 # Route datasets from a local folder of CSV/Parquet files
-uv run python main.py \
+python main.py \
     --catalog-type file \
     --catalog-path ./sample_data/ \
     --output-dir ./output/
 
 # Process specific tables only
-uv run python main.py \
+python main.py \
     --catalog-type file \
     --catalog-path ./sample_data/ \
     --datasets Gold_Rx_Claims Gold_Patient_Adherence
 
 # Route AND run the top-ranked pipeline for each dataset
-uv run python main.py \
+python main.py \
     --catalog-type file \
     --catalog-path ./sample_data/ \
     --run-pipelines
 
 # Write per-dataset routing configs as JSON to ./output/
-uv run python main.py \
+python main.py \
     --catalog-type file \
     --catalog-path ./sample_data/ \
     --output-dir ./output/
@@ -260,29 +261,27 @@ Warnings:
 ## Project Structure
 
 ```
-named_model_resolution/               ← config-builder library
-  src/named_model_resolution/
-    models.py                         all shared dataclasses
-    catalog_parser.py                 parses gold_layer_datamarts.csv
-    column_matcher.py                 abbreviation expand + subtype matching + guardrail
-    classifier.py                     fact vs dimension classification
-    config_assembler.py               ranked model config assembly
+named_model_resolution/               ← Python package (directly at repo root)
+  models.py                           all shared dataclasses
+  catalog_parser.py                   parses gold_layer_datamarts.csv
+  column_matcher.py                   abbreviation expand + subtype matching + guardrail
+  classifier.py                       fact vs dimension classification
+  config_assembler.py                 ranked model config assembly
 
-orchestrator/                         orchestration package
-  src/orchestrator/
-    connectors/
-      base.py                         CatalogConnector Protocol (interface)
-      file_connector.py               reads CSV/Parquet from a folder
-      sql_connector.py                reads via SQLAlchemy (Databricks, Postgres, etc.)
-    profiler.py                       samples data → skewness/grain/transform suggestions
-    router.py                         main entry point — runs the full pipeline
-    pipelines/
-      base.py                         ModelPipeline abstract base class
-      bocpd_pipeline.py               BOCPD: changepoint detection
-      mmm_pipeline.py                 MMM: marketing mix
-      psi_pipeline.py                 PSI: population drift
-      arima_pipeline.py               ARIMA/SARIMA/Prophet: seasonal forecasting
-      __init__.py                     PIPELINE_REGISTRY dict
+orchestrator/                         ← Python package (directly at repo root)
+  connectors/
+    base.py                           CatalogConnector Protocol (interface)
+    file_connector.py                 reads CSV/Parquet from a folder
+    sql_connector.py                  reads via SQLAlchemy (Databricks, Postgres, etc.)
+  profiler.py                         samples data → skewness/grain/transform suggestions
+  router.py                           main entry point — runs the full pipeline
+  pipelines/
+    base.py                           ModelPipeline abstract base class
+    bocpd_pipeline.py                 BOCPD: changepoint detection
+    mmm_pipeline.py                   MMM: marketing mix
+    psi_pipeline.py                   PSI: population drift
+    arima_pipeline.py                 ARIMA/SARIMA/Prophet: seasonal forecasting
+    __init__.py                       PIPELINE_REGISTRY dict
 
 pharma_knowledge_base/
   gold_layer_datamarts.csv            spec: 10 gold-layer datamarts (do not edit)
@@ -292,6 +291,7 @@ pharma_knowledge_base/
     model_routing.yaml                ← ADD NEW MODELS HERE
     transform_rules.yaml              statistical transform thresholds
 
+pyproject.toml                        single install config (pip install -e .)
 main.py                               CLI entry point
 ```
 
@@ -329,9 +329,9 @@ CausalImpact:
     - "Measure impact of a launch or label change on TRx"
 ```
 
-2. Create `orchestrator/src/orchestrator/pipelines/causal_impact_pipeline.py` implementing `ModelPipeline` (copy any existing pipeline as a template — all four stages must be implemented).
+2. Create `orchestrator/pipelines/causal_impact_pipeline.py` implementing `ModelPipeline` (copy any existing pipeline as a template — all four stages must be implemented).
 
-3. Register it in `orchestrator/src/orchestrator/pipelines/__init__.py`:
+3. Register it in `orchestrator/pipelines/__init__.py`:
 ```python
 from .causal_impact_pipeline import CausalImpactPipeline
 PIPELINE_REGISTRY["CausalImpact"] = CausalImpactPipeline
@@ -341,7 +341,7 @@ No changes to the router, classifier, or column matcher are needed.
 
 ### Add a new connector (e.g., BigQuery, Snowflake)
 
-Create a new file in `orchestrator/src/orchestrator/connectors/` that implements the three methods from `CatalogConnector` in `base.py`:
+Create a new file in `orchestrator/connectors/` that implements the three methods from `CatalogConnector` in `base.py`:
 
 ```python
 class BigQueryConnector:

@@ -1,8 +1,22 @@
-[tool.uv.workspace]
-members = [
-    "named_model_resolution",
-    "orchestrator",
+[project]
+name = "named-model-resolution"
+version = "0.1.0"
+description = "Heuristics-based config-builder and column classifier for pharma gold-layer datasets"
+authors = [
+    { name = "Aaditya Vardhan", email = "aaditya.das@procdna.com" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "pyyaml>=6.0",
+    "pandas>=2.0",
+    "scipy>=1.11",
+    "sqlalchemy>=2.0",
 ]
 
-[tool.uv.sources]
-named-model-resolution = { workspace = true }
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+exclude = ["pharma_knowledge_base*", "*.egg-info", "sample_data*", "output*"]
