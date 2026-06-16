@@ -19,18 +19,17 @@ Given a catalog (Databricks Unity Catalog, a SQL database, or a folder of files)
 
 ### On Databricks (primary target)
 
-This repo uses two packages installed from source:
-- `named_model_resolution/` + `orchestrator/` + `insights_runner/` — this repo
-- `insights_generation/` — the BOCPD + MMM pipeline implementations (heavier deps: PyMC, bayesian-changepoint-detection)
+Everything lives in one repo — `pipeline/` (BOCPD + MMM implementations) is a first-class package alongside `named_model_resolution/`, `orchestrator/`, and `insights_runner/`. A single `%pip` cell installs it all.
 
 **Option A — `%pip` (recommended, auto-restarts kernel)**
 
 ```python
-# Cell 1 — must be first; Databricks restarts the kernel after %pip
+# Cell 1 — must be the very first cell; Databricks restarts the kernel after %pip
 repo = "/Workspace/Users/your-user/named_model_resolution"
-%pip install -e {repo} --quiet
-%pip install -e {repo}/insights_generation --quiet
+%pip install -e {repo}[pipeline] --quiet
 ```
+
+The `[pipeline]` extra pulls in the heavier model deps (PyMC, bayesian-changepoint-detection, arviz). Omit it if you only need the router and quality gate without running BOCPD/MMM.
 
 **Option B — `subprocess` (no kernel restart, for jobs or shared setup cells)**
 
@@ -41,9 +40,7 @@ _ctx = dbutils.notebook.entry_point.getDbutils().notebook().getContext()
 _nb_path = _ctx.notebookPath().get()
 _repo = "/Workspace" + "/".join(_nb_path.split("/")[:-1])
 
-subprocess.check_call([sys.executable, "-m", "pip", "install", "-e", _repo, "--quiet"])
-subprocess.check_call([sys.executable, "-m", "pip", "install", "-e", f"{_repo}/insights_generation", "--quiet"])
-
+subprocess.check_call([sys.executable, "-m", "pip", "install", "-e", f"{_repo}[pipeline]", "--quiet"])
 if _repo not in sys.path:
     sys.path.insert(0, _repo)
 importlib.invalidate_caches()
@@ -56,8 +53,8 @@ print("Install complete — imports ready")
 ### Local development
 
 ```bash
-pip install -e .
-pip install -e insights_generation/   # only needed if using BOCPD/MMM runners
+pip install -e ".[pipeline]"   # full install including BOCPD/MMM deps
+pip install -e .               # router + quality gate only (no PyMC)
 ```
 
 ---
@@ -200,7 +197,7 @@ python main.py --catalog-type file --catalog-path ./sample_data/ --deduplicate
 named_model_resolution/     core classification + routing package
 orchestrator/               connector + profiler + router + pipeline stubs
 insights_runner/            quality gate + model bridge → InsightsPayload JSON
-insights_generation/        BOCPD + MMM pipeline implementations (heavier deps)
+pipeline/                   BOCPD + MMM pipeline implementations (installed via [pipeline] extra)
 pharma_knowledge_base/
   gold_layer_datamarts.csv  10-datamart spec (multi-section flat file)
   configs/

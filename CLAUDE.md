@@ -14,11 +14,11 @@ A **heuristics-based, data-aware config-builder and model router** that ingests 
 
 ## Development Setup
 
-Single `pyproject.toml` at repo root. All packages (`named_model_resolution/`, `orchestrator/`, `insights_runner/`) are Python packages directly at repo root — no `src/` layer.
+Single `pyproject.toml` at repo root. All packages — `named_model_resolution/`, `orchestrator/`, `insights_runner/`, and `pipeline/` — are Python packages directly at repo root. No `src/` layer, no submodules.
 
 ```bash
-pip install -e .                              # installs router + insights_runner
-pip install -e insights_generation/           # installs BOCPD + MMM pipeline (PyMC, bayesian-cp-detection)
+pip install -e ".[pipeline]"                  # full install: router + quality gate + BOCPD/MMM
+pip install -e .                              # router + quality gate only (no PyMC/arviz)
 python main.py --help
 pytest
 pytest tests/test_catalog_parser.py          # single test file
@@ -46,16 +46,15 @@ print('WARNINGS:', w)
 
 ## Databricks Setup
 
-### Installation (two packages)
+### Installation (single package, one command)
 
-This repo and `insights_generation/` have separate `pyproject.toml` files and must be installed independently. Both must be installed for BOCPD/MMM runners to work.
+Everything — router, quality gate, BOCPD pipeline, MMM pipeline — is in one repo with one `pyproject.toml`. The `[pipeline]` optional extra pulls in the heavier model deps.
 
 **`%pip` pattern (preferred, auto-restarts kernel):**
 ```python
 # Cell 1 — must be first cell in the notebook
 repo = "/Workspace/Users/your-user/named_model_resolution"
-%pip install -e {repo} --quiet
-%pip install -e {repo}/insights_generation --quiet
+%pip install -e {repo}[pipeline] --quiet
 ```
 
 **`subprocess` pattern (no restart — jobs, shared setup cells):**
@@ -66,8 +65,7 @@ _ctx = dbutils.notebook.entry_point.getDbutils().notebook().getContext()
 _nb_path = _ctx.notebookPath().get()
 _repo = "/Workspace" + "/".join(_nb_path.split("/")[:-1])
 
-subprocess.check_call([sys.executable, "-m", "pip", "install", "-e", _repo, "--quiet"])
-subprocess.check_call([sys.executable, "-m", "pip", "install", "-e", f"{_repo}/insights_generation", "--quiet"])
+subprocess.check_call([sys.executable, "-m", "pip", "install", "-e", f"{_repo}[pipeline]", "--quiet"])
 if _repo not in sys.path:
     sys.path.insert(0, _repo)
 importlib.invalidate_caches()
@@ -108,11 +106,11 @@ These are only used by the standalone `insights_generation` pipeline scripts (no
 
 ### `dataset_config.json` on Databricks
 
-`insights_generation/pipeline/config.py` loads `dataset_config.json` on first import. If absent, it auto-detects schema from the gold table (samples 10% via Spark). The file is saved at the project root. On Databricks, either:
-- Pre-commit a tuned `dataset_config.json` to the repo, or
+`pipeline/config.py` loads `dataset_config.json` on first import. If absent, it auto-detects schema from the gold table (samples 10% via Spark). After the `insights_generation/pipeline/` → `pipeline/` move, this file is now resolved relative to **repo root** (`Path(__file__).parent.parent` = repo root when `pipeline/` is at root level). On Databricks:
+- Pre-commit a tuned `dataset_config.json` to the repo root, or
 - Let it auto-detect on first notebook run (takes 30-60s for large tables)
 
-**`insights_runner` does NOT use the global `DATASET` from `config.py`** — it builds its own `DatasetConfig` from `RouterResult` column subtypes. The `dataset_config.json` is only needed when running the standalone pipeline scripts directly.
+**`insights_runner` does NOT use the global `DATASET` from `pipeline/config.py`** — it builds its own `DatasetConfig` from `RouterResult` column subtypes. The `dataset_config.json` is only needed when running the standalone pipeline scripts (`pipeline/data_prep.py`, `pipeline/bocpd.py`, etc.) directly.
 
 ---
 
@@ -163,13 +161,16 @@ insights_runner/                  Python package: quality gate + model bridge la
     models.py                     InsightsPayload dataclass + .to_json()
     builder.py                    build() assembles all parts into InsightsPayload
 
-insights_generation/              separate pipeline package (heavier deps: PyMC, BOCPD)
-  pipeline/
-    bocpd.py                      run_bocpd(), extract_candidates()
-    mmm_data_prep.py              transform_channels(mkt, dataset_config=None), build_model_matrix()
-    mmm_fit.py                    build_pymc_model(X, y, ..., dataset_config=None)
-    dataset_config.py             DatasetConfig + ChannelSpec dataclasses
-    config.py                     global DATASET, UC-aware I/O helpers, ON_DATABRICKS flag
+pipeline/                         Python package at repo root (installed via [pipeline] optional extra)
+  bocpd.py                        run_bocpd(), extract_candidates()
+  mmm_data_prep.py                transform_channels(mkt, dataset_config=None), build_model_matrix()
+  mmm_fit.py                      build_pymc_model(X, y, ..., dataset_config=None)
+  dataset_config.py               DatasetConfig + ChannelSpec dataclasses
+  config.py                       global DATASET, UC-aware I/O, ON_DATABRICKS; dataset_config.json -> repo root
+  data_prep.py                    aggregate_to_market(), add_features(), split()
+  integration.py                  BOCPD + MMM signal integration / anomaly classification
+  validation.py                   validation report generation
+  insights.py                     LangGraph insights agent (future use)
 
 main.py                           CLI entry point
 ```

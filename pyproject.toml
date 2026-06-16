@@ -14,6 +14,21 @@ dependencies = [
     "sqlalchemy>=2.0",
 ]
 
+[project.optional-dependencies]
+# Heavy model-pipeline deps (BOCPD + MMM).
+# Databricks: %pip install -e {repo}[pipeline] --quiet
+# Local:      pip install -e ".[pipeline]"
+pipeline = [
+    "arviz==1.1.0",
+    "arviz-base==1.1.0",
+    "arviz-plots==1.1.0",
+    "arviz-stats==1.1.0",
+    "bayesian-changepoint-detection==0.2.dev1",
+    "h5netcdf==1.8.1",
+    "netcdf4==1.7.4",
+    "pymc==6.0.1",
+]
+
 [build-system]
 requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"

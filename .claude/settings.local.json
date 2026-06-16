@@ -20,7 +20,10 @@
       "Bash(echo \"Renamed _nmr_tmp to named_model_resolution, exit: $?\")",
       "Bash(find 'C:/Users/AadityaVardhanDas/OneDrive - ProcDNA Analytics Pvt. Ltd/named_model_resolution/named_model_resolution' -name __pycache__ -type d -exec rm -rf '{}' +)",
       "Bash(pip install:*)",
-      "Bash(python -c ':*)"
+      "Bash(python -c ':*)",
+      "Bash(python -m pip show insights-generation)",
+      "Bash(python -c \"import pipeline; print\\('pipeline importable'\\)\")",
+      "Bash(python main.py --catalog-type file --catalog-path ./sample_data/ --output-dir ./output/)"
     ]
   }
 }
