@@ -21,6 +21,7 @@ _TRAIN_WEEKS = 180
 _HAZARD_LAM = 52
 _CP_THRESHOLD = 0.30
 _CP_MIN_DIST = 8
+_CP_WINDOW_WEEKS = 8   # half-width of context window around each changepoint (±8 weeks ≈ ±2 months)
 
 
 class BOCPDRunner(ModelRunner):
@@ -118,6 +119,36 @@ class BOCPDRunner(ModelRunner):
         except Exception as exc:
             cp_records = []
 
+        # ── Context windows around each changepoint ───────────────────────────
+        log_col_key = f"log_{measure_col}"   # e.g. "log_TRX", "log_NBRX"
+        raw_col_key = measure_col            # e.g. "TRX", "NBRX"
+        cp_context_windows = []
+        for rec in cp_records:
+            idx   = int(rec["week_idx"])
+            start = max(0, idx - _CP_WINDOW_WEEKS)
+            end   = min(len(log_series), idx + _CP_WINDOW_WEEKS + 1)
+
+            window_series = [
+                {
+                    "week":              str(mkt[date_col].iloc[i]),
+                    log_col_key:         round(float(log_series[i]), 4),
+                    raw_col_key:         round(float(mkt[measure_col].iloc[i]), 2),
+                    "cp_prob":           round(float(cp_prob[i]), 4),
+                    "exp_run_length":    round(float(exp_run_length[i]), 2),
+                }
+                for i in range(start, end)
+            ]
+
+            cp_context_windows.append({
+                "changepoint_date":      rec["week"],
+                "cp_prob":               rec["cp_prob"],
+                "exp_run_length":        rec["exp_run_length"],
+                f"{log_col_key}_at_cp":  rec[series_col_label],
+                f"{raw_col_key}_at_cp":  round(float(mkt[measure_col].iloc[idx]), 2),
+                "window_weeks":          _CP_WINDOW_WEEKS,
+                "series":                window_series,
+            })
+
         cp_series = [
             {
                 "week": str(mkt[date_col].iloc[i]),
@@ -130,9 +161,10 @@ class BOCPDRunner(ModelRunner):
         return {
             "ran": True,
             "signals": {
-                "n_changepoints": len(cp_records),
-                "cp_candidates": cp_records,
-                "cp_probs_series": cp_series,
+                "n_changepoints":     len(cp_records),
+                "cp_candidates":      cp_records,
+                "cp_context_windows": cp_context_windows,
+                "cp_probs_series":    cp_series,
                 "model_params": {
                     "mu_0": round(mu_0, 6),
                     "beta_0": round(beta_0, 8),

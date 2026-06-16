@@ -116,6 +116,7 @@ def build(
         model_signals[model_name] = {
             "ran": result.get("ran", False),
             "quality_decision": qr.decision if qr else "UNKNOWN",
+            "candidate_window": result.get("candidate_window"),
             "signals": result.get("signals"),
             "reason": result.get("reason"),
             "note": result.get("note"),

@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+import yaml
 
 from named_model_resolution.models import DatamartCatalog, RouterResult
 from orchestrator.connectors.base import CatalogConnector
@@ -33,6 +34,62 @@ def _aggregate_decision(per_model: dict) -> str:
     if "WARN" in decisions:
         return "WARN"
     return "FAIL"
+
+
+def _read_window_config(thresholds_path: Path) -> dict[str, int]:
+    """
+    Read candidate_window_years per model from thresholds.yaml.
+    Returns {model_name: years} for models that have the key set.
+    """
+    try:
+        with open(thresholds_path) as f:
+            raw = yaml.safe_load(f)
+        return {
+            model: int(cfg["candidate_window_years"])
+            for model, cfg in raw.items()
+            if isinstance(cfg, dict) and "candidate_window_years" in cfg
+        }
+    except Exception:
+        return {}
+
+
+def _window_df(
+    df: pd.DataFrame,
+    router_result: RouterResult,
+    window_years: int,
+) -> tuple[pd.DataFrame, dict]:
+    """
+    Slice df to rows with date >= (max_date - window_years).
+
+    Returns:
+        (sliced_df, window_info)  — window_info is embedded in the payload
+        so the LLM knows exactly which date range was analysed.
+        Falls back to (full df, {}) if no date column or slicing fails.
+    """
+    date_col = next(
+        (s.name for s in router_result.classification.columns
+         if s.semantic_subtype == "date"),
+        None,
+    )
+    if date_col is None or date_col not in df.columns or window_years <= 0:
+        return df, {}
+
+    try:
+        dates = pd.to_datetime(df[date_col], errors="coerce")
+        max_date = dates.max()
+        cutoff = max_date - pd.DateOffset(years=window_years)
+        mask = dates >= cutoff
+        sliced = df[mask].copy()
+        if len(sliced) == 0:
+            return df, {}
+        return sliced, {
+            "years": window_years,
+            "cutoff_date": str(cutoff.date()),
+            "max_date": str(max_date.date()),
+            "n_rows": len(sliced),
+        }
+    except Exception:
+        return df, {}
 
 
 def run(
@@ -68,7 +125,6 @@ def run(
             router_result.dataset_name, n=sample_n
         )
     except Exception as exc:
-        # Return a minimal payload with the error surfaced in warnings
         from datetime import datetime, timezone
         return InsightsPayload(
             dataset_name=router_result.dataset_name,
@@ -82,6 +138,9 @@ def run(
             knowledge_base_context={},
         )
 
+    # ── Candidate window config (per model, from thresholds.yaml) ─────────────
+    window_config = _read_window_config(thresholds_path)
+
     assessor = QualityAssessor(thresholds_path)
 
     model_configs = router_result.model_configs
@@ -92,32 +151,45 @@ def run(
     signals_map: dict = {}
 
     for mc in model_configs:
-        # ── Quality gate ──────────────────────────────────────────────────────
-        quality = assessor.assess(df, router_result, mc.model_name)
+        # ── Candidate generation: slice to model-specific date window ─────────
+        window_years = window_config.get(mc.model_name, 0)
+        if window_years > 0:
+            df_model, window_info = _window_df(df, router_result, window_years)
+        else:
+            df_model, window_info = df, {}
+
+        # ── Quality gate (runs on the windowed slice) ─────────────────────────
+        quality = assessor.assess(df_model, router_result, mc.model_name)
         quality_per_model[mc.model_name] = quality
 
         if quality.decision == "FAIL":
             signals_map[mc.model_name] = {
                 "ran": False,
                 "reason": quality.skip_reason or "quality gate FAIL",
+                "candidate_window": window_info or None,
             }
             continue
 
-        # ── Run model ─────────────────────────────────────────────────────────
+        # ── Run model (also on the windowed slice) ────────────────────────────
         runner_cls = RUNNER_REGISTRY.get(mc.model_name)
         if runner_cls is None:
             signals_map[mc.model_name] = {
                 "ran": False,
                 "reason": f"no runner registered for model '{mc.model_name}'",
+                "candidate_window": window_info or None,
             }
             continue
 
         try:
-            signals_map[mc.model_name] = runner_cls().run(df, router_result, mc)
+            result = runner_cls().run(df_model, router_result, mc)
+            if window_info:
+                result["candidate_window"] = window_info
+            signals_map[mc.model_name] = result
         except Exception as exc:
             signals_map[mc.model_name] = {
                 "ran": False,
                 "reason": f"runner raised an exception: {exc}",
+                "candidate_window": window_info or None,
             }
 
     quality_report = QualityReport(
