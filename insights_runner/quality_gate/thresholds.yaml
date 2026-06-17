@@ -15,7 +15,7 @@ BOCPD:
   checks: [fill_rate, zero_variance, date_continuity, min_row_count]
   # Grain-aware minimum unique periods required (date_continuity check)
   min_periods:
-    daily:     60              # ~2 months of daily data
+    daily:     30              # ~1 month of active daily events (sparse CRM logs)
     weekly:     8              # 8 weeks
     monthly:   12              # 12 months
     quarterly:  4              # 4 quarters

@@ -88,10 +88,17 @@ def _build_dataset_config(
     if not target_col or not week_col:
         return None, None
 
+    _NON_NUMERIC_DTYPES = frozenset({
+        "varchar", "char", "nvarchar", "nchar", "text", "string",
+        "object", "str",
+    })
+
     channels = []
     for s in specs:
         if s.semantic_subtype != "channel":
             continue
+        if s.dtype.lower() in _NON_NUMERIC_DTYPES:
+            continue  # skip — cannot apply numeric adstock/decay to string column
         name_lower = s.name.lower()
         is_broadcast = any(h in name_lower for h in _broadcast_hints)
         is_competitor = any(

@@ -58,7 +58,7 @@ def fill_rate(
     fail_fill = params.get("fail_fill_rate", 0.50)
 
     date_specs   = _specs_by_subtype(column_specs, "date")
-    metric_specs = _specs_by_subtype(column_specs, "measure", "channel")
+    metric_specs = _specs_by_subtype(column_specs, "measure", "unclassified_metric", "channel")
 
     if not date_specs and not metric_specs:
         return QualityCheckResult(
@@ -164,11 +164,13 @@ def fill_rate(
 
     # ── PASS ──────────────────────────────────────────────────────────────────
     if best_metric_col is not None:
+        _metric_subtype_map = {s.name: s.semantic_subtype for s in metric_specs}
+        best_metric_type = _metric_subtype_map.get(best_metric_col, "column")
         return QualityCheckResult(
             check_name="fill_rate",
             status="PASS",
             detail=(
-                f"key columns viable -- best measure: '{best_metric_col}' "
+                f"key columns viable -- best {best_metric_type}: '{best_metric_col}' "
                 f"{best_metric_fill:.0%} filled"
             ),
             metric=round(best_metric_fill, 4),
@@ -480,58 +482,72 @@ def segment_balance(
             metric=None,
         )
 
-    seg_col = seg_specs[0].name
-    if seg_col not in df.columns:
+    # Try all segment columns; return PASS on the first one that satisfies both
+    # min_segment_size and max_imbalance_ratio.  If none pass, report the best
+    # failure (segment with the largest smallest-segment count).
+    best_fail: dict | None = None
+
+    for seg_spec in seg_specs:
+        seg_col = seg_spec.name
+        if seg_col not in df.columns:
+            continue
+        try:
+            counts = df[seg_col].value_counts()
+            if len(counts) == 0:
+                continue
+
+            min_count = int(counts.min())
+            max_count = int(counts.max())
+            ratio = max_count / (min_count + 1e-9)
+
+            if min_count >= min_seg_size and ratio <= max_imbalance:
+                return QualityCheckResult(
+                    check_name="segment_balance",
+                    status="PASS",
+                    detail=(
+                        f"'{seg_col}': {len(counts)} segments, "
+                        f"ratio {ratio:.1f}x <= {max_imbalance}x"
+                    ),
+                    metric=round(ratio, 2),
+                )
+            # Size OK but imbalanced — still a PASS-level candidate (warn)
+            if min_count >= min_seg_size:
+                return QualityCheckResult(
+                    check_name="segment_balance",
+                    status="WARN",
+                    detail=(
+                        f"imbalance ratio {ratio:.1f}x > {max_imbalance}x "
+                        f"in '{seg_col}' ({len(counts)} segments)"
+                    ),
+                    metric=round(ratio, 2),
+                )
+            # Track best failure across all candidates
+            if best_fail is None or min_count > best_fail["min_count"]:
+                best_fail = {
+                    "col": seg_col,
+                    "min_count": min_count,
+                    "n_segments": len(counts),
+                }
+        except Exception:
+            continue
+
+    if best_fail:
         return QualityCheckResult(
             check_name="segment_balance",
-            status="WARN",
-            detail=f"segment column '{seg_col}' not in dataframe",
-            metric=None,
+            status="FAIL",
+            detail=(
+                f"no viable segment column (tried {len(seg_specs)}). "
+                f"Best: '{best_fail['col']}' smallest segment {best_fail['min_count']} rows "
+                f"(need >= {min_seg_size})"
+            ),
+            metric=float(best_fail["min_count"]),
         )
-
-    try:
-        counts = df[seg_col].value_counts()
-        if len(counts) == 0:
-            return QualityCheckResult(
-                check_name="segment_balance",
-                status="FAIL",
-                detail=f"segment column '{seg_col}' has no values",
-                metric=None,
-            )
-
-        min_count = int(counts.min())
-        max_count = int(counts.max())
-        ratio = max_count / (min_count + 1e-9)
-
-        if min_count < min_seg_size:
-            return QualityCheckResult(
-                check_name="segment_balance",
-                status="FAIL",
-                detail=f"smallest segment in '{seg_col}' has only {min_count} rows "
-                       f"(need >= {min_seg_size})",
-                metric=float(min_count),
-            )
-        if ratio > max_imbalance:
-            return QualityCheckResult(
-                check_name="segment_balance",
-                status="WARN",
-                detail=f"imbalance ratio {ratio:.1f}x > {max_imbalance}x "
-                       f"in '{seg_col}' ({len(counts)} segments)",
-                metric=round(ratio, 2),
-            )
-        return QualityCheckResult(
-            check_name="segment_balance",
-            status="PASS",
-            detail=f"'{seg_col}': {len(counts)} segments, ratio {ratio:.1f}x <= {max_imbalance}x",
-            metric=round(ratio, 2),
-        )
-    except Exception as exc:
-        return QualityCheckResult(
-            check_name="segment_balance",
-            status="WARN",
-            detail=f"segment balance check failed: {exc}",
-            metric=None,
-        )
+    return QualityCheckResult(
+        check_name="segment_balance",
+        status="WARN",
+        detail="no segment column found in dataframe",
+        metric=None,
+    )
 
 
 def autocorrelation(

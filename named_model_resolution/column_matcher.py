@@ -44,6 +44,16 @@ _DATE_GATE_TOKENS = frozenset({
 _NUMERIC_DTYPES = {"int", "int64", "int32", "float", "float64", "float32", "double", "number", "numeric", "bigint"}
 _STRING_DTYPES = {"object", "str", "string", "varchar", "char", "text"}
 
+# Date-suffix override: column names ending with these tokens are always dates,
+# regardless of earlier tokens (e.g. CALL_OR_RTE_SENT_DATE has "rte" channel token
+# but ends in "date" → must be a date).
+_DATE_SUFFIX_TOKENS_GUARD = frozenset({"date", "dt", "datetime", "timestamp", "ts"})
+
+# Rolling metric guard: _last_90d, _last_30d patterns are count/rate windows,
+# never channels.  Returning None lets the heuristic dtype path take over
+# (numeric → unclassified_metric; string → dimension_attribute).
+_ROLLING_METRIC_RE = re.compile(r"_last_\d+[dD]$")
+
 
 def _normalize_name(name: str) -> str:
     """Lowercase and replace non-alphanumeric characters with underscores."""
@@ -114,6 +124,18 @@ def _candidate_match(
     # Flag prefix/suffix
     if _has_flag_pattern(name, flag_prefixes, flag_suffixes):
         return ("flag", 1.0)
+
+    # Date suffix override: column ending in _date, _dt, _datetime, _ts, etc.
+    # is always a date regardless of channel/measure tokens earlier in the name.
+    # Example: CALL_OR_RTE_SENT_DATE has "rte" (channel token) but ends in "date".
+    last_token = name.split("_")[-1] if "_" in name else name
+    if last_token in _DATE_SUFFIX_TOKENS_GUARD:
+        return ("date", 0.8)
+
+    # Rolling metric guard: _last_90d, _last_30d, etc. are count/rate windows,
+    # not channels.  Return None so heuristic dtype path handles them.
+    if _ROLLING_METRIC_RE.search(name):
+        return None
 
     is_numeric_ind = _is_numeric_indicator(name, numeric_ind_suffixes, numeric_ind_prefixes)
 
@@ -266,13 +288,17 @@ class ColumnMatcher:
                 business_hint=self._get_hint(name, norm),
             )
 
-        # 4b — token overlap
-        result = _token_overlap_match(
-            norm_for_matching,
-            self._candidates,
-            self._numeric_ind_suffixes,
-            self._numeric_ind_prefixes,
-        )
+        # 4b — token overlap (skipped for rolling-metric columns — they go straight
+        #      to the numeric guardrail so _last_90d patterns don't hit channel tokens)
+        if _ROLLING_METRIC_RE.search(norm_for_matching):
+            result = None
+        else:
+            result = _token_overlap_match(
+                norm_for_matching,
+                self._candidates,
+                self._numeric_ind_suffixes,
+                self._numeric_ind_prefixes,
+            )
         if result:
             subtype, confidence = result
             return ColumnSpec(
