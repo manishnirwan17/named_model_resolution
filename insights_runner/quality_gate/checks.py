@@ -49,12 +49,18 @@ def fill_rate(
     """
     Check null percentage of key columns (date, measure, channel).
     Uses pre-computed ColumnProfile.null_pct -- no re-sample needed.
+
+    Date columns: ALL must pass (a missing date column = no time dimension).
+    Measure/channel columns: AT LEAST ONE must be viable (the measure selector
+      will pick the best available column -- we only need one good option).
     """
     min_fill = params.get("min_fill_rate", 0.80)
     fail_fill = params.get("fail_fill_rate", 0.50)
 
-    key_specs = _specs_by_subtype(column_specs, "date", "measure", "channel")
-    if not key_specs:
+    date_specs   = _specs_by_subtype(column_specs, "date")
+    metric_specs = _specs_by_subtype(column_specs, "measure", "channel")
+
+    if not date_specs and not metric_specs:
         return QualityCheckResult(
             check_name="fill_rate",
             status="WARN",
@@ -63,62 +69,111 @@ def fill_rate(
         )
 
     profiles = _profile_map(column_profiles)
-    worst_col = None
-    worst_fill = 1.0
-    skipped_dead = 0
 
-    for s in key_specs:
+    # ── Date columns: worst-case (ALL must pass) ──────────────────────────────
+    worst_date_fill = 1.0
+    worst_date_col  = None
+    for s in date_specs:
         p = profiles.get(s.name)
         if p is None:
             continue
-        # Completely-null measure/channel columns are dead weight: the measure selector
-        # scores them last and never picks them. Skip them here so they don't block models
-        # that have other viable columns. Date columns are NOT skipped — a null date
-        # column means no time dimension, which is a hard blocker.
-        if p.null_pct >= 1.0 and s.semantic_subtype != "date":
+        fill = 1.0 - p.null_pct
+        if fill < worst_date_fill:
+            worst_date_fill = fill
+            worst_date_col  = s.name
+
+    if worst_date_col is not None and worst_date_fill < fail_fill:
+        return QualityCheckResult(
+            check_name="fill_rate",
+            status="FAIL",
+            detail=(
+                f"date column '{worst_date_col}' fill rate {worst_date_fill:.0%} "
+                f"< {fail_fill:.0%} (unusable)"
+            ),
+            metric=round(worst_date_fill, 4),
+        )
+
+    # ── Measure/channel columns: best-viable (AT LEAST ONE must pass) ─────────
+    # Skip completely-null columns -- they are never selected by the measure selector.
+    # Evaluate the BEST available fill rate: if the best column passes, models can run.
+    best_metric_fill = None
+    best_metric_col  = None
+    skipped_dead     = 0
+
+    for s in metric_specs:
+        p = profiles.get(s.name)
+        if p is None:
+            continue
+        if p.null_pct >= 1.0:
             skipped_dead += 1
             continue
         fill = 1.0 - p.null_pct
-        if fill < worst_fill:
-            worst_fill = fill
-            worst_col = s.name
+        if best_metric_fill is None or fill > best_metric_fill:
+            best_metric_fill = fill
+            best_metric_col  = s.name
 
-    # If every measure/channel column was 100% null and nothing else was checkable, fail.
-    if worst_col is None and skipped_dead > 0:
+    if best_metric_col is None and metric_specs:
+        if skipped_dead > 0:
+            return QualityCheckResult(
+                check_name="fill_rate",
+                status="FAIL",
+                detail=(
+                    f"all {skipped_dead} measure/channel column(s) are 100%% null "
+                    f"-- no viable key columns"
+                ),
+                metric=0.0,
+            )
+        # No profiled metric columns -- fall through to date-only summary
+
+    if best_metric_col is not None and best_metric_fill < fail_fill:
         return QualityCheckResult(
             check_name="fill_rate",
             status="FAIL",
-            detail=f"all {skipped_dead} measure/channel column(s) are 100%% null -- no viable key columns",
-            metric=0.0,
+            detail=(
+                f"best measure/channel '{best_metric_col}' fill {best_metric_fill:.0%} "
+                f"< {fail_fill:.0%} -- no viable measure column"
+            ),
+            metric=round(best_metric_fill, 4),
         )
 
-    if worst_col is None:
-        return QualityCheckResult(
-            check_name="fill_rate",
-            status="PASS",
-            detail="no profiled key columns to check",
-            metric=None,
-        )
-
-    if worst_fill < fail_fill:
-        return QualityCheckResult(
-            check_name="fill_rate",
-            status="FAIL",
-            detail=f"column '{worst_col}' fill rate {worst_fill:.0%} < {fail_fill:.0%} (unusable)",
-            metric=round(worst_fill, 4),
-        )
-    if worst_fill < min_fill:
+    # ── Warnings (no FAIL reached) ────────────────────────────────────────────
+    if worst_date_col is not None and worst_date_fill < min_fill:
         return QualityCheckResult(
             check_name="fill_rate",
             status="WARN",
-            detail=f"column '{worst_col}' fill rate {worst_fill:.0%} < {min_fill:.0%} threshold",
-            metric=round(worst_fill, 4),
+            detail=(
+                f"date column '{worst_date_col}' fill rate {worst_date_fill:.0%} "
+                f"< {min_fill:.0%} threshold"
+            ),
+            metric=round(worst_date_fill, 4),
+        )
+    if best_metric_col is not None and best_metric_fill < min_fill:
+        return QualityCheckResult(
+            check_name="fill_rate",
+            status="WARN",
+            detail=(
+                f"best measure column '{best_metric_col}' fill {best_metric_fill:.0%} "
+                f"< {min_fill:.0%} threshold"
+            ),
+            metric=round(best_metric_fill, 4),
+        )
+
+    # ── PASS ──────────────────────────────────────────────────────────────────
+    if best_metric_col is not None:
+        return QualityCheckResult(
+            check_name="fill_rate",
+            status="PASS",
+            detail=(
+                f"key columns viable -- best measure: '{best_metric_col}' "
+                f"{best_metric_fill:.0%} filled"
+            ),
+            metric=round(best_metric_fill, 4),
         )
     return QualityCheckResult(
         check_name="fill_rate",
         status="PASS",
-        detail=f"all key columns >={worst_fill:.0%} filled (worst: '{worst_col}')",
-        metric=round(worst_fill, 4),
+        detail="all date columns adequately filled",
+        metric=round(worst_date_fill, 4) if worst_date_col is not None else None,
     )
 
 
@@ -205,7 +260,8 @@ def date_continuity(
         )
 
     try:
-        dates = pd.to_datetime(df[date_col]).dropna().sort_values().unique()
+        from ..runners._data_normalizer import parse_dates_flexible
+        dates = parse_dates_flexible(df[date_col]).dropna().sort_values().unique()
         n_periods = len(dates)
 
         # ── Detect grain before checking minimums ─────────────────────────────
@@ -486,11 +542,12 @@ def autocorrelation(
 
     date_specs = _specs_by_subtype(column_specs, "date")
     try:
+        from ..runners._data_normalizer import parse_dates_flexible
         series = pd.to_numeric(df[measure_col], errors="coerce").dropna()
         if date_specs and date_specs[0].name in df.columns:
             date_col = date_specs[0].name
             sorted_df = df[[date_col, measure_col]].copy()
-            sorted_df[date_col] = pd.to_datetime(sorted_df[date_col])
+            sorted_df[date_col] = parse_dates_flexible(sorted_df[date_col])
             sorted_df = sorted_df.sort_values(date_col)
             series = pd.to_numeric(sorted_df[measure_col], errors="coerce").dropna()
 

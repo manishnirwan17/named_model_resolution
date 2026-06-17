@@ -13,9 +13,52 @@ _infer_agg_method    â€” heuristic: columns with rate/ratio/pct/share keywords â
 
 from __future__ import annotations
 
+import re
+
 import pandas as pd
 
 _RATE_KEYWORDS = ("rate", "ratio", "pct", "percent", "share", "avg", "mean")
+
+# Quarter string: "2025 Q4", "2025Q4", "Q4 2025", "Q4/2025" etc.
+_QUARTER_RE = re.compile(
+    r"(?:(\d{4})\s*[Qq](\d)|[Qq](\d)\s*[/\-]?\s*(\d{4}))"
+)
+
+
+def parse_dates_flexible(series: pd.Series) -> pd.Series:
+    """
+    Parse a date Series, with fallback handling for quarter strings like
+    '2025 Q4' or 'Q4 2025' that pandas cannot parse natively.
+
+    Returns a datetime64[ns] Series (NaT for unparseable values).
+    """
+    try:
+        return pd.to_datetime(series)
+    except Exception:
+        pass
+
+    # Quarter-string fallback: map each value individually
+    def _parse_one(v):
+        if v is None or (isinstance(v, float) and v != v):  # NaN check
+            return pd.NaT
+        s = str(v).strip()
+        m = _QUARTER_RE.search(s)
+        if m:
+            year   = m.group(1) or m.group(4)
+            qdigit = m.group(2) or m.group(3)
+            try:
+                return pd.Period(f"{year}Q{qdigit}", freq="Q").start_time
+            except Exception:
+                pass
+        try:
+            return pd.to_datetime(s)
+        except Exception:
+            return pd.NaT
+
+    try:
+        return series.apply(_parse_one)
+    except Exception:
+        return pd.to_datetime(series, errors="coerce")
 
 
 def _infer_agg_method(col_name: str) -> str:

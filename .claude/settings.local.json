@@ -28,7 +28,8 @@
       "Bash(rm -rf .git/modules/insights_generation)",
       "Bash(rm -f .gitmodules)",
       "Bash(python -c \"from named_model_resolution.models import ModelConfig; import inspect; print\\(inspect.signature\\(ModelConfig.__init__\\)\\)\")",
-      "Bash(python -c \"from named_model_resolution.models import ColumnProfile; import inspect; print\\(inspect.signature\\(ColumnProfile.__init__\\)\\)\")"
+      "Bash(python -c \"from named_model_resolution.models import ColumnProfile; import inspect; print\\(inspect.signature\\(ColumnProfile.__init__\\)\\)\")",
+      "Bash(xargs grep:*)"
     ]
   }
 }
