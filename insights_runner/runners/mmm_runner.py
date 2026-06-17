@@ -173,7 +173,7 @@ def _add_features(mkt: pd.DataFrame, ds) -> pd.DataFrame:
 # Single-target MMM pipeline
 # ---------------------------------------------------------------------------
 
-def _run_single_mmm(df: pd.DataFrame, ds) -> dict:
+def _run_single_mmm(df: pd.DataFrame, ds, column_specs=None) -> dict:
     """
     Run the full MMM pipeline for one DatasetConfig (one target column).
 
@@ -204,7 +204,7 @@ def _run_single_mmm(df: pd.DataFrame, ds) -> dict:
 
     # ── Normalize to single time series (territory-level rollup) ─────────────
     _all_measure_cols = [ds.target_col] + [s.name for s in ds.channels]
-    mkt, agg_note = normalize_to_series(mkt, ds.week_col, _all_measure_cols)
+    mkt, agg_note = normalize_to_series(mkt, ds.week_col, _all_measure_cols, column_specs)
     if agg_note:
         measure_note = (
             (measure_note + " " + agg_note).strip() if measure_note else agg_note
@@ -423,7 +423,7 @@ class MMMRunner(ModelRunner):
                 }
                 continue
 
-            by_measure[target_col] = _run_single_mmm(df.copy(), ds)
+            by_measure[target_col] = _run_single_mmm(df.copy(), ds, column_specs=specs)
 
         if not by_measure:
             return {"ran": False, "reason": "no viable measure columns for MMM"}

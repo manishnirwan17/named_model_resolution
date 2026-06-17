@@ -8,12 +8,18 @@ global:
   min_fill_rate: 0.80          # columns below this → WARN
   fail_fill_rate: 0.50         # columns below this → FAIL (unusable)
   zero_variance_cv: 0.01       # CV < this → column is near-constant → WARN
-  min_row_count: 52            # fewer rows than this → FAIL for any model
+  min_row_count: 8             # hard floor (safety net only — real minimums are per-grain in model blocks)
 
 BOCPD:
   candidate_window_years: 2    # slice to max_date - 2 years before running
   checks: [fill_rate, zero_variance, date_continuity, min_row_count]
-  min_years: 1                 # grain-aware minimum: 52 weeks / 12 months / 365 days
+  # Grain-aware minimum unique periods required (date_continuity check)
+  min_periods:
+    daily:     60              # ~2 months of daily data
+    weekly:     8              # 8 weeks
+    monthly:   12              # 12 months
+    quarterly:  4              # 4 quarters
+    default:    8              # fallback when grain is undetected
   max_gap_weeks: 4             # tolerable gap in time series (in periods, grain-agnostic)
 
 MMM:
@@ -33,5 +39,11 @@ PSI:
 ARIMA:
   candidate_window_years: 3    # slice to max_date - 3 years (needs 2 seasonal cycles)
   checks: [fill_rate, zero_variance, date_continuity, min_row_count, autocorrelation]
-  min_years: 2                 # grain-aware minimum: 104 weeks / 24 months / 730 days
+  # 2× BOCPD minimums — ARIMA needs two seasonal cycles to fit reliably
+  min_periods:
+    daily:    120              # ~4 months of daily data
+    weekly:    16              # 16 weeks (~4 months)
+    monthly:   24              # 24 months (2 years)
+    quarterly:  8              # 8 quarters (2 years)
+    default:   16
   min_acf_lag1: 0.10           # lag-1 autocorrelation must exceed this

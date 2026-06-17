@@ -23,9 +23,14 @@ from named_model_resolution.models import ColumnProfile, ColumnSpec
 
 
 def _infer_date_grain(series: pd.Series) -> str | None:
-    """Infer time grain from sorted date series: daily / weekly / monthly / None."""
+    """Infer time grain from sorted unique dates: daily / weekly / monthly / quarterly / None.
+
+    Uses unique dates only — deduplicating before computing gaps prevents HCP-level
+    data (many rows per month with the same date) from producing a median gap of 0
+    and being wrongly classified as daily.
+    """
     try:
-        s = pd.to_datetime(series.dropna()).sort_values()
+        s = pd.to_datetime(series.dropna()).drop_duplicates().sort_values()
         if len(s) < 2:
             return None
         gaps = s.diff().dropna().dt.days
@@ -36,6 +41,8 @@ def _infer_date_grain(series: pd.Series) -> str | None:
             return "weekly"
         if 25 <= median_gap <= 35:
             return "monthly"
+        if 80 <= median_gap <= 100:
+            return "quarterly"
         return None
     except Exception:
         return None

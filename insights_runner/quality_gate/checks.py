@@ -263,46 +263,67 @@ def date_continuity(
             metric=None,
         )
 
+    # Map grain name → canonical typical period length in days
+    _GRAIN_DAYS: dict[str, float] = {
+        "daily":     1.0,
+        "weekly":    7.0,
+        "monthly":  30.5,
+        "quarterly": 91.25,
+    }
+
     try:
         from ..runners._data_normalizer import parse_dates_flexible
         dates = parse_dates_flexible(df[date_col]).dropna().sort_values().unique()
         n_periods = len(dates)
 
-        # ── Detect grain before checking minimums ─────────────────────────────
-        # Grain detection: prefer the stored profile grain; fall back to median gap.
+        # ── Detect grain ──────────────────────────────────────────────────────
+        # Priority 1: profiler-computed grain (uses unique dates, reliable).
+        # Priority 2: median gap from unique dates in this window.
+        # Priority 3: fall back to weekly (7 days).
         profiles_map = _profile_map(column_profiles)
         grain = (profiles_map.get(date_col) or type("", (), {"date_grain": None})()).date_grain
 
         gaps_days: pd.Series | None = None
-        typical_period_days: float = 7.0  # default weekly fallback
 
-        if n_periods >= 2:
-            gaps_days = pd.Series(dates).diff().dropna().dt.days
-            _med = float(gaps_days.median())
-            if _med > 0:
-                typical_period_days = _med
-        elif grain == "monthly":
-            typical_period_days = 30.5
-        elif grain == "daily":
-            typical_period_days = 1.0
+        if grain and grain in _GRAIN_DAYS:
+            typical_period_days = _GRAIN_DAYS[grain]
+        else:
+            typical_period_days = 7.0       # default — overwritten below when possible
+            if n_periods >= 2:
+                gaps_days = pd.Series(dates).diff().dropna().dt.days
+                _med = float(gaps_days.median())
+                if _med > 0:
+                    typical_period_days = _med
+                    # Back-fill grain label from computed gap
+                    if typical_period_days <= 2:
+                        grain = "daily"
+                    elif typical_period_days <= 9:
+                        grain = "weekly"
+                    elif typical_period_days <= 35:
+                        grain = "monthly"
+                    elif typical_period_days <= 100:
+                        grain = "quarterly"
 
         grain_label = grain if grain else f"~{typical_period_days:.0f}-day"
 
         # ── Grain-aware minimum period count ──────────────────────────────────
-        # min_years (preferred) converts to periods based on detected grain.
-        # min_weeks falls back for configs that don't yet use min_years.
-        if "min_years" in params:
+        # min_periods dict (per-grain) takes priority; min_years is legacy fallback.
+        _mp = params.get("min_periods")
+        if isinstance(_mp, dict):
+            _grain_key = grain if grain in _mp else "default"
+            min_periods = int(_mp.get(_grain_key, _mp.get("default", 8)))
+        elif "min_years" in params:
             if typical_period_days <= 2:
-                periods_per_year = 365       # daily
+                periods_per_year = 365
             elif typical_period_days <= 9:
-                periods_per_year = 52        # weekly
+                periods_per_year = 52
             elif typical_period_days <= 35:
-                periods_per_year = 12        # monthly
+                periods_per_year = 12
             else:
-                periods_per_year = 4         # quarterly / coarser
+                periods_per_year = 4
             min_periods = int(params["min_years"] * periods_per_year)
         else:
-            min_periods = params.get("min_weeks", params.get("min_row_count", 52))
+            min_periods = params.get("min_weeks", params.get("min_row_count", 8))
 
         if n_periods < min_periods:
             return QualityCheckResult(
@@ -310,8 +331,7 @@ def date_continuity(
                 status="FAIL",
                 detail=(
                     f"only {n_periods} unique {grain_label} dates -- "
-                    f"need >= {min_periods} ({params.get('min_years', min_periods)} "
-                    f"{'year(s)' if 'min_years' in params else 'periods'})"
+                    f"need >= {min_periods} {grain_label} periods"
                 ),
                 metric=float(n_periods),
             )

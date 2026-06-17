@@ -2,7 +2,9 @@
 Pre-aggregation utilities shared across model runners.
 
 normalize_to_series  — collapses territory/HCP-level multi-row-per-date data to a
-                       single market-level time series.
+                       single market-level time series.  When column_specs is provided,
+                       detects the extra grain dimension (segment/key/geography columns)
+                       for a two-step aggregation that preserves count information.
 
 normalize_grain      — resamples a weekly dataset to monthly grain.  Triggered only
                        when thresholds.yaml has target_grain: "monthly" for the model.
@@ -18,6 +20,9 @@ import re
 import pandas as pd
 
 _RATE_KEYWORDS = ("rate", "ratio", "pct", "percent", "share", "avg", "mean")
+
+# Column subtypes that identify an extra grain dimension beyond the date axis
+_EXTRA_GRAIN_SUBTYPES = frozenset({"segment", "key", "geography"})
 
 # Quarter string: "2025 Q4", "2025Q4", "Q4 2025", "Q4/2025" etc.
 _QUARTER_RE = re.compile(
@@ -71,18 +76,37 @@ def normalize_to_series(
     df: pd.DataFrame,
     date_col: str,
     measure_cols: list[str],
+    column_specs=None,
 ) -> tuple[pd.DataFrame, str | None]:
     """
     If df has multiple rows per date (territory/HCP-level data), aggregate to
     one row per date.
 
-    Returns (df, note_or_None).
-    - Columns with rate/ratio/pct names → mean
-    - All other measure columns → sum
+    When column_specs is provided (list[ColumnSpec]), columns classified as
+    segment / key / geography are treated as the extra grain dimension:
+      Step 1 — groupby([date, *grain_cols]) collapses within-segment duplicates
+      Step 2 — national rollup groupby(date) + nunique count of the primary grain
+
+    Without specs (or when no matching grain cols exist in df), falls back to
+    groupby-date-only with an n_obs count column.
+
+    Returns (aggregated_df, note_or_None).
+    - Rate/ratio/pct columns → mean;  all others → sum
+    - Count column added: n_{primary_grain_col} (segment-aware) or n_obs (fallback)
     - If no duplicates: returns original df unchanged with note=None.
     """
     if not df[date_col].duplicated().any():
         return df, None
+
+    # ── Detect extra grain dimension from column_specs ────────────────────────
+    extra_grain_cols: list[str] = []
+    if column_specs:
+        extra_grain_cols = [
+            s.name for s in column_specs
+            if s.semantic_subtype in _EXTRA_GRAIN_SUBTYPES
+            and s.name in df.columns
+            and s.name != date_col
+        ]
 
     agg_dict = {
         col: _infer_agg_method(col)
@@ -92,17 +116,58 @@ def normalize_to_series(
     if not agg_dict:
         return df, None
 
-    result = (
-        df.groupby(date_col, as_index=False)
-        .agg(agg_dict)
-        .sort_values(date_col)
-        .reset_index(drop=True)
-    )
-    methods = ", ".join(f"'{c}' ({m})" for c, m in agg_dict.items())
-    note = (
-        f"Multiple rows per date detected -- likely territory/HCP-level data. "
-        f"Aggregated to market-level time series: {methods}."
-    )
+    n_rows_before = len(df)
+
+    if extra_grain_cols:
+        primary_grain = extra_grain_cols[0]
+
+        # Step 1: collapse within-segment-period duplicates (if any)
+        step1 = (
+            df.groupby([date_col] + extra_grain_cols, as_index=False)
+            .agg(agg_dict)
+        )
+
+        # Step 2: national rollup — sum/mean across segments + unique count
+        count_per_date = (
+            step1.groupby(date_col)[primary_grain]
+            .nunique()
+            .rename(f"n_{primary_grain}")
+            .reset_index()
+        )
+        result = (
+            step1.groupby(date_col, as_index=False)
+            .agg(agg_dict)
+            .sort_values(date_col)
+            .reset_index(drop=True)
+            .merge(count_per_date, on=date_col, how="left")
+        )
+        n_unique = int(count_per_date[f"n_{primary_grain}"].max())
+        note = (
+            f"Aggregated {n_rows_before:,} {primary_grain}-level rows "
+            f"({n_unique} unique {primary_grain}s) to {len(result)} national periods."
+        )
+    else:
+        # Fallback: no grain info — group by date, attach row-count per period
+        count_per_date = (
+            df.groupby(date_col)
+            .size()
+            .rename("n_obs")
+            .reset_index()
+        )
+        result = (
+            df.groupby(date_col, as_index=False)
+            .agg(agg_dict)
+            .sort_values(date_col)
+            .reset_index(drop=True)
+            .merge(count_per_date, on=date_col, how="left")
+        )
+        n_max = int(count_per_date["n_obs"].max())
+        methods = ", ".join(f"'{c}' ({m})" for c, m in agg_dict.items())
+        note = (
+            f"Multiple rows per date detected (max {n_max} per date) -- "
+            f"aggregated to market-level time series: {methods}."
+        )
+
     return result, note
 
 

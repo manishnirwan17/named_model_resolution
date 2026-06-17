@@ -63,6 +63,7 @@ def _run_bocpd_series(
     measure_col: str,
     profiles: dict,
     hazard_lam: int,
+    column_specs=None,
 ) -> dict:
     """
     Run the full BOCPD pipeline for a single (date_col, measure_col) pair.
@@ -80,7 +81,7 @@ def _run_bocpd_series(
     try:
         mkt = df[[date_col, measure_col]].copy()
         mkt[date_col] = parse_dates_flexible(mkt[date_col])
-        mkt, agg_note = normalize_to_series(mkt, date_col, [measure_col])
+        mkt, agg_note = normalize_to_series(mkt, date_col, [measure_col], column_specs)
         mkt = mkt.sort_values(date_col).reset_index(drop=True)
     except Exception as exc:
         return {"error": f"date parsing / aggregation failed: {exc}"}
@@ -268,7 +269,8 @@ class BOCPDRunner(ModelRunner):
             )
 
         for col in col_names:
-            col_signals = _run_bocpd_series(df, date_col, col, profiles, hazard_lam)
+            col_signals = _run_bocpd_series(df, date_col, col, profiles, hazard_lam,
+                                            column_specs=specs)
             # Attach shared grain info into model_params (only when run succeeded)
             if "model_params" in col_signals:
                 col_signals["model_params"]["date_grain"] = (
