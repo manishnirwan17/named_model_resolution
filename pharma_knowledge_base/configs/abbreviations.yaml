@@ -39,3 +39,10 @@ lot: line_of_therapy
 # Veeva field aliases — map to canonical _id names so the key-suffix detector fires
 npi_vod: npi_id          # Veeva NPI field (double) — is an HCP identifier
 crm_user_id: crm_user_id # already ends _id; explicit for clarity
+
+# CRM G1_ prefixed fields (Veeva CRM naming convention)
+g1_meeting_type: meeting_type       # → segment via meeting_type candidate
+g1_interaction_type: interaction_type  # → segment via interaction_type candidate
+
+# Note: WAC (Wholesale Acquisition Cost) is a direct entry in measure_candidates
+# — no abbreviation expansion needed; exact match gives confidence 1.0

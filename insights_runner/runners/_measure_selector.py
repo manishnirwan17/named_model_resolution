@@ -108,14 +108,40 @@ def _score_spec(spec: ColumnSpec, profiles: dict[str, ColumnProfile]) -> float:
     if p is None:
         return score
     score -= p.null_pct * 3.0
+
+    # ── CV bonus (meaningful variation relative to mean) ──────────────────────
     if p.std is not None and p.mean is not None and abs(p.mean) > 1e-6:
-        score += min(p.std / abs(p.mean), 2.0) * 0.5
-    if p.unique_count > 50:
+        cv = p.std / abs(p.mean)
+        if cv < 0.02:
+            score -= 1.0    # near-constant (also surfaced by zero_variance check)
+        else:
+            score += min(cv, 2.0) * 0.5
+
+    # ── Unique-count: penalty for degenerate, bonus for rich ─────────────────
+    if p.unique_count <= 2:
+        score -= 3.0    # constant or binary — useless as a continuous time-series target
+    elif p.unique_count <= 5:
+        score -= 1.0    # very few levels — likely ordinal/categorical, not a continuous measure
+    elif p.unique_count > 50:
         score += 0.5
     elif p.unique_count > 10:
         score += 0.2
-    if p.skewness is not None and 0 < p.skewness < 5:
-        score += 0.2
+
+    # ── Distribution shape bonus ──────────────────────────────────────────────
+    # Calibrated on real datasets:
+    #   engagement counts (f2f, touches): sk 1–7
+    #   sales volume (qty_sold):          sk ~132
+    #   claims volume:                    sk 193–228
+    #   price (WAC):                      sk –1.3 (near-normal)
+    if p.skewness is not None:
+        sk = p.skewness
+        if 0.3 <= sk <= 15:
+            score += 0.4    # moderate right-skew — engagement/sales pattern
+        elif sk > 15:
+            score += 0.2    # extreme right-skew (claims volume, order qty) — valid measure
+        elif abs(sk) <= 1.5:
+            score += 0.2    # near-normal (WAC, rates) — good for ARIMA
+
     if p.value_max is not None and p.value_max > 0:
         score += 0.1
     return score

@@ -18,5 +18,13 @@ class InsightsPayload:
     warnings: list[str]
     knowledge_base_context: dict         # matched datamart + category + description + use_cases
 
-    def to_json(self) -> str:
-        return json.dumps(asdict(self), indent=2, default=str)
+    def to_json(self, strip_series: bool = False) -> str:
+        d = asdict(self)
+        if strip_series:
+            for sig in d.get("model_signals", {}).values():
+                sig.get("signals", {}).pop("cp_probs_series", None)
+        return json.dumps(d, indent=2, default=str)
+
+    def to_html(self) -> str:
+        from .html_report import build_html
+        return build_html(asdict(self))

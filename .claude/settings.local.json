@@ -32,7 +32,10 @@
       "Bash(xargs grep:*)",
       "Read(//c/Users/AadityaVardhanDas/**)",
       "Bash(find 'OneDrive - ProcDNA Analytics Pvt. Ltd/named_model_resolution' -name \"*.py\" -type f -exec grep -l \"groupby\\\\|aggregat\\\\|_aggregate_to_market\\\\|normalize_to_series\" {} \\\\;)",
-      "Bash(python -m pytest tests/ -x -q)"
+      "Bash(python -m pytest tests/ -x -q)",
+      "Bash(ls -lh pharma_knowledge_base/configs/*.yaml)",
+      "Bash(python3)",
+      "Bash(python tests/test_html_report.py)"
     ]
   }
 }

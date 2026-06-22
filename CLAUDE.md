@@ -190,8 +190,11 @@ main.py                           CLI entry point
 
 Four-step pipeline per column:
 1. Normalize (lowercase, special chars -> `_`)
-2. Abbreviation expand (`abbreviations.yaml`) — `WK_END` -> `week_end_date`
-3. Candidate list match (`candidates.yaml`) — token-boundary match (not greedy substring) -> subtype
+2. Abbreviation expand (`abbreviations.yaml`) — `WK_END` -> `week_end_date`, `G1_MEETING_TYPE` -> `meeting_type`
+3. Candidate list match (`candidates.yaml`) — two short-circuit guards run first, then token-boundary match:
+   - **Date-suffix override** — last token in `{date, dt, datetime, timestamp, ts}` → always `date` (catches `CALL_OR_RTE_SENT_DATE`)
+   - **Rolling-metric guard** — name matches `_last_\d+[dD]$` (e.g. `f2f_last_90d`) → skip all candidate matching; falls to dtype heuristic (numeric → `unclassified_metric`)
+   - Then exact match → token-boundary subset match → subtype assigned
 4. Heuristic fallbacks:
    - Numeric indicator guard: `_idx`, `n_` prefixes suppress date matching
    - dtype = date/timestamp -> `date` (conf 0.9)
@@ -200,6 +203,8 @@ Four-step pipeline per column:
    - else -> `unknown`
 
 Channel detection: `channel` subtype is checked before `measure` and `date`. MMM routing requires `channel` in required subtypes — pure sales tables do not route to MMM.
+
+**MMM string-channel guard.** `mmm_runner._build_dataset_config` skips any channel column whose dtype is VARCHAR/string — only numeric columns can receive adstock/decay transforms.
 
 ### Layer 3 — Assemble per-model configs (`config_assembler.py`)
 
@@ -214,14 +219,40 @@ Star-schema join detection (1-hop): if a fact table has columns matching a dimen
 ```
 RouterResult -> connector.sample_rows(n=5000) -> per model:
   1. Slice df to [max_date - candidate_window_years, max_date]   (thresholds.yaml per model)
+     - date column selected by select_date_column() scoring (not first-seen)
+     - parse_dates_flexible() handles ISO, YYYY-MM, "2025 Q3" quarter strings
   2. QualityAssessor.assess(df_windowed)
        FAIL -> skip model, record reason
        WARN/PASS -> run model
   3. RUNNER_REGISTRY[model_name].run(df_windowed, router_result, model_config)
+     - normalize_to_series() detects segment/geography extra-grain and does 2-step aggregation
+       (step 1: collapse within-segment; step 2: national roll-up + nunique count column)
   4. OutputBuilder.build() -> InsightsPayload.to_json()
 ```
 
 Quality checks and runners both operate on the same windowed slice. `candidate_window` info (years, cutoff_date, max_date, n_rows) is embedded in each model's signal block.
+
+**Registered quality checks:**
+
+| Check | Models | Notes |
+|-------|--------|-------|
+| `fill_rate` | all | Best-viable logic: at least ONE date and ONE measure must pass (not all). Pool includes `measure + unclassified_metric + channel`. |
+| `zero_variance` | all | CV < 0.01 → WARN |
+| `date_continuity` | BOCPD, PSI, ARIMA | Per-grain `min_periods` dict (daily/weekly/monthly/quarterly). Profiler grain preferred; computed from gap median as fallback. |
+| `channel_collinearity` | MMM | Pairwise Pearson; high collinearity → WARN |
+| `segment_balance` | PSI | Iterates **all** segment columns; returns PASS on first viable one |
+| `autocorrelation` | ARIMA | Lag-1 ACF check |
+| `min_row_count` | all | Hard floor from `global.min_row_count` |
+| `distribution_shape` | BOCPD, MMM, ARIMA | FAIL if all measure columns are constant (unique_count≤2) or near-zero CV (<0.02); WARN if best measure has very few unique values |
+
+**Grain-aware minimums** (in `thresholds.yaml` under `min_periods`):
+
+| Grain | BOCPD | ARIMA |
+|-------|-------|-------|
+| daily | 30 | 120 |
+| weekly | 8 | 16 |
+| monthly | 12 | 24 |
+| quarterly | 4 | 8 |
 
 ---
 
@@ -270,10 +301,14 @@ To add a new model to the **insights runner** (3 steps, no core code changes):
 
 - **Config-not-code.** Candidate lists, abbreviations, routing rules, quality thresholds, transform rules, and candidate window sizes all live in YAML files. Rarely need to edit Python to handle new datasets.
 - **`unclassified_metric` never dropped.** Flagged and passed to models that accept generic measures. Warnings always surfaced in `RouterResult.warnings`.
-- **Token-boundary matching, not greedy substring.** `column_matcher.py` uses token-set subset check. Numeric indicator guard (`_idx`, `n_`) further prevents false date classification.
-- **MMM requires channel.** Adding `channel` to MMM's `required` list ensures pure sales/adherence tables don't route to MMM.
+- **Token-boundary matching, not greedy substring.** `column_matcher.py` uses token-set subset check. Two pre-matching guards protect against false positives: date-suffix override (last token `_date` etc.) and rolling-metric guard (`_last_90d` patterns).
+- **MMM requires channel.** Adding `channel` to MMM's `required` list ensures pure sales/adherence tables don't route to MMM. Non-numeric channel columns (VARCHAR) are additionally filtered in `_build_dataset_config`.
+- **`select_date_column` is the single date picker.** Used by all runners, quality checks, and the pipeline window slicer — eliminates `[0]`/`next()` patterns. Scores date candidates by match_source, confidence, null_pct, date_grain, and unique_count.
+- **Segment-aware aggregation.** `normalize_to_series` detects extra grain dimensions (`segment`, `key`, `geography` subtypes) via `column_specs` and performs a 2-step rollup: within-segment collapse then national aggregation. A `n_{segment}` unique-count column is added for PSI analysis.
+- **Distribution quality scoring.** `_score_spec` in `_measure_selector.py` penalises constant (−3.0) and binary (−3.0) columns and near-zero CV (−1.0). Healthy right-skewed columns (sk 0.3–15, typical for engagement/sales counts) get +0.4; extreme skew (sk>15, claims) +0.2; near-normal (|sk|≤1.5, prices/rates) +0.2.
 - **`pipeline/` functions accept explicit `dataset_config`.** `transform_channels()`, `build_model_matrix()`, and `build_pymc_model()` all accept `dataset_config=None` (falls back to global `DATASET`). The runners always pass an explicit config built from `RouterResult` — no global mutation.
 - **BOCPD context window keys follow the measure column.** `cp_context_windows` rows use `log_{measure_col}` and `{measure_col}` as keys — generic over any continuous metric, not just TRX/sales.
 - **String detail messages use ASCII only.** The quality gate check detail strings avoid Unicode so they serialize cleanly on Windows cp1252 and Databricks driver output.
 - **Signal deduplication.** `Router.run(deduplicate=True)` groups fact tables by (routing_signature, top_model) and marks less-rich duplicates `is_duplicate_signal=True`. Skip these in the insights loop.
 - **`pipeline/config.py` local fallback.** Locally, if `dataset_config.json` and the gold parquet are both absent, `_load_dataset()` returns an empty `DatasetConfig(target_col="trx")` placeholder rather than crashing. This is safe because `insights_runner` never uses the global `DATASET`.
+- **Profiler grain is reliable post-fix.** `_infer_date_grain` deduplicates dates before computing gaps — prevents HCP-level repeated-date data from returning "daily" when the underlying grain is monthly.

@@ -8,3 +8,11 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Datasets
+datasets/
+
+
+# Debug Files
+debug*
+

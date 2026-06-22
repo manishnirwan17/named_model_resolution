@@ -5,14 +5,15 @@ A **data-aware model router + insights pipeline** for pharma analytics gold-laye
 Given a catalog (Databricks Unity Catalog, a SQL database, or a folder of files), it:
 
 1. Discovers all tables/datasets
-2. Classifies each column by semantic subtype (`date`, `measure`, `geography`, `segment`, `channel`, …)
-3. Handles abbreviated column names (`WK_END`, `TRX`, `NBRX`) via an expansion dictionary
+2. Classifies each column by semantic subtype (`date`, `measure`, `geography`, `segment`, `channel`, …) using token-boundary matching, abbreviation expansion, and heuristic guards (date-suffix override, rolling-metric guard, flag-suffix patterns)
+3. Handles abbreviated and vendor-prefixed column names (`WK_END`, `TRX`, `G1_MEETING_TYPE`) via a configurable expansion dictionary
 4. Routes each fact table to the right ML model(s) — BOCPD, MMM, PSI, ARIMA, …
 5. Resolves star-schema joins (fact → dimension, 1-hop only) to inherit column subtypes
-6. Profiles sample data (skewness, nulls, date grain) and recommends statistical transforms
-7. Slices data to a **model-specific candidate window** (e.g. max_date − 1 yr for MMM, − 2 yrs for BOCPD) before running quality checks or model pipelines
-8. Runs a **quality gate** per model (fill rate, variance, collinearity, date continuity, …)
-9. Executes model pipelines (BOCPD changepoint detection, MMM attribution) and emits a structured JSON payload ready for LLM summarisation
+6. Profiles sample data (skewness, nulls, grain-aware date detection) and recommends statistical transforms
+7. Slices data to a **model-specific candidate window** (e.g. max_date − 1 yr for MMM, − 2 yrs for BOCPD) using the best-scoring date column
+8. Runs a **quality gate** per model (fill rate, variance, collinearity, date continuity, segment balance, **distribution shape**, …)
+9. Aggregates multi-grain data (HCP-level → territory/national) segment-aware before running models
+10. Executes model pipelines (BOCPD changepoint detection, MMM attribution) and emits a structured JSON payload ready for LLM summarisation
 
 ---
 
@@ -290,13 +291,22 @@ measure_candidates:
   - my_new_kpi
 channel_candidates:
   - my_new_channel
+segment_candidates:
+  - decile          # ordinal 1-10 grouping — catches *_DECILE* variants via token-boundary
 ```
 
 Or if it's an abbreviation, add to `abbreviations.yaml`:
 
 ```yaml
 mnk: my_new_kpi
+g1_meeting_type: meeting_type   # CRM G1_ prefix → canonical segment name
 ```
+
+**Special column patterns handled automatically (no YAML needed):**
+- Column names ending in `_date`, `_dt`, `_datetime`, `_timestamp`, `_ts` → always `date`
+- Column names matching `_last_\d+[dD]$` (e.g. `f2f_last_90d`) → `unclassified_metric` (rolling window, not a channel)
+- Column names ending in `_yn` → `flag` (yes/no binary)
+- Column names ending in `_flag`, `_indicator`, `_ind` → `flag`
 
 ### Add a new routed model (3 steps)
 
@@ -331,7 +341,16 @@ No other files change in either case.
 ### Adjust candidate window or BOCPD context window
 
 - **Candidate window per model** (how far back from max_date to slice before running): edit `candidate_window_years` in the model's block in `insights_runner/quality_gate/thresholds.yaml`.
+- **Grain-aware minimum periods** (daily/weekly/monthly/quarterly minimums for `date_continuity`): edit the `min_periods` dict in the model's YAML block.
+- **Distribution shape sensitivity**: edit `min_measure_unique_count` in the `global` block of `thresholds.yaml` (default: 5 — columns with ≤ this many unique values are flagged as degenerate).
 - **BOCPD context window half-width** (weeks either side of each changepoint): edit `_CP_WINDOW_WEEKS` at the top of `insights_runner/runners/bocpd_runner.py`.
+
+### Add a new quality check
+
+1. Write a function in `insights_runner/quality_gate/checks.py` with signature `(df, column_specs, column_profiles, params) -> QualityCheckResult`
+2. Register it in `CHECK_REGISTRY` in `insights_runner/quality_gate/assessor.py`
+3. Add the check name to the model's `checks` list in `thresholds.yaml`
+4. Optionally add threshold parameters under the model block in `thresholds.yaml`
 
 ---
 
@@ -341,9 +360,21 @@ No other files change in either case.
 
 **BOCPD context windows** — instead of returning the full time-series (100+ entries) in `cp_probs_series`, BOCPD also emits `cp_context_windows`: a ±8-week slice around each detected changepoint showing the actual metric value, log-transformed value, CP probability, and expected run length. Column keys are named after the actual measure column (`log_TRX`, `TRX_at_cp`, etc.). The full `cp_probs_series` is retained as an exhaustive record.
 
-**Quality gate** — before any expensive model run, `insights_runner` checks fill rate, zero variance, channel collinearity, date continuity, segment balance, and autocorrelation. FAIL → model skipped with reason; WARN → model runs with caveat flagged in output; PASS → model runs normally.
+**Quality gate** — before any expensive model run, `insights_runner` checks fill rate, zero variance, channel collinearity, date continuity, segment balance, autocorrelation, and **distribution shape**. FAIL → model skipped with reason; WARN → model runs with caveat flagged in output; PASS → model runs normally.
+
+| Check | Models | What it catches |
+|-------|--------|-----------------|
+| `fill_rate` | all | Null-heavy date or measure columns |
+| `zero_variance` | all | Near-constant columns (CV < 0.01) |
+| `date_continuity` | BOCPD, PSI, ARIMA | Insufficient periods or large gaps; grain-aware thresholds (daily ≥ 30, weekly ≥ 8, monthly ≥ 12) |
+| `channel_collinearity` | MMM | Highly correlated channels (|r| > 0.85) |
+| `segment_balance` | PSI | Severely imbalanced or too-small segment groups; tries all segment columns |
+| `autocorrelation` | ARIMA | Lag-1 ACF below threshold |
+| `distribution_shape` | BOCPD, MMM, ARIMA | All measure columns are constant (unique_count ≤ 2) or near-zero CV |
 
 **Guardrail gate** — any numeric column that cannot be matched to a known subtype becomes `unclassified_metric`, is never dropped, and is passed to any model that accepts generic measures. Warnings are always surfaced.
+
+**Distribution-aware measure selection** — `_measure_selector.py` scores unclassified metric candidates by distribution quality: constant/binary columns are penalised (−3.0), right-skewed count data (skewness 0.3–15, typical for HCP touchpoints) earns +0.4, extreme right-skew (claims volume) earns +0.2, near-normal distributions (prices/rates) earn +0.2.
 
 **Star schema (1-hop)** — if a fact table has a foreign key to a dimension table in the catalog, the dimension's column subtypes are inherited for routing. Snowflake-style multi-hop joins are intentionally excluded (too expensive).
 

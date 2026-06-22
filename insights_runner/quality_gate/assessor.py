@@ -19,6 +19,7 @@ from .checks import (
     autocorrelation,
     channel_collinearity,
     date_continuity,
+    distribution_shape,
     fill_rate,
     min_row_count,
     segment_balance,
@@ -34,6 +35,7 @@ CHECK_REGISTRY: dict[str, Callable] = {
     "segment_balance":       segment_balance,
     "autocorrelation":       autocorrelation,
     "min_row_count":         min_row_count,
+    "distribution_shape":    distribution_shape,
 }
 
 

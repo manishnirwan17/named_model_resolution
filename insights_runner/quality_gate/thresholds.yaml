@@ -9,10 +9,11 @@ global:
   fail_fill_rate: 0.50         # columns below this → FAIL (unusable)
   zero_variance_cv: 0.01       # CV < this → column is near-constant → WARN
   min_row_count: 8             # hard floor (safety net only — real minimums are per-grain in model blocks)
+  min_measure_unique_count: 5  # distribution_shape check: columns with <= this unique values are degenerate
 
 BOCPD:
   candidate_window_years: 2    # slice to max_date - 2 years before running
-  checks: [fill_rate, zero_variance, date_continuity, min_row_count]
+  checks: [fill_rate, zero_variance, date_continuity, min_row_count, distribution_shape]
   # Grain-aware minimum unique periods required (date_continuity check)
   min_periods:
     daily:     30              # ~1 month of active daily events (sparse CRM logs)
@@ -24,7 +25,7 @@ BOCPD:
 
 MMM:
   candidate_window_years: 1    # slice to max_date - 1 year before running
-  checks: [fill_rate, zero_variance, channel_collinearity, min_row_count]
+  checks: [fill_rate, zero_variance, channel_collinearity, min_row_count, distribution_shape]
   collinearity_threshold: 0.85
   min_channel_count: 2         # need a mix of at least 2 channels
   min_rows: 100
@@ -38,7 +39,7 @@ PSI:
 
 ARIMA:
   candidate_window_years: 3    # slice to max_date - 3 years (needs 2 seasonal cycles)
-  checks: [fill_rate, zero_variance, date_continuity, min_row_count, autocorrelation]
+  checks: [fill_rate, zero_variance, date_continuity, min_row_count, autocorrelation, distribution_shape]
   # 2× BOCPD minimums — ARIMA needs two seasonal cycles to fit reliably
   min_periods:
     daily:    120              # ~4 months of daily data

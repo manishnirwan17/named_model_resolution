@@ -183,6 +183,86 @@ def fill_rate(
     )
 
 
+def distribution_shape(
+    df: pd.DataFrame,
+    column_specs: list[ColumnSpec],
+    column_profiles: list[ColumnProfile],
+    params: dict,
+) -> QualityCheckResult:
+    """
+    Verify at least one measure/unclassified_metric column has a non-degenerate
+    distribution suitable for time-series modelling.
+
+    Uses ColumnProfile stats only -- no re-sample needed.
+
+    FAIL  -- all candidate measure columns are constant or binary (nothing to model).
+    WARN  -- best viable measure has very few unique values (ordinal-like, not continuous).
+    PASS  -- at least one column has a healthy distribution.
+    """
+    min_unique = params.get("min_measure_unique_count", 5)
+
+    measure_specs = _specs_by_subtype(column_specs, "measure", "unclassified_metric")
+    if not measure_specs:
+        return QualityCheckResult(
+            check_name="distribution_shape",
+            status="WARN",
+            detail="no measure columns identified to check distribution",
+            metric=None,
+        )
+
+    profiles = _profile_map(column_profiles)
+
+    healthy: list[str] = []
+    degenerate: list[tuple[str, str]] = []
+
+    for s in measure_specs:
+        p = profiles.get(s.name)
+        if p is None:
+            continue
+        if p.null_pct >= 1.0:
+            continue  # fully null -- skipped by measure selector anyway
+        if p.unique_count <= 2:
+            degenerate.append((s.name, f"unique_count={p.unique_count}"))
+        elif p.std is not None and p.mean is not None and abs(p.mean) > 1e-9:
+            cv = p.std / abs(p.mean)
+            if cv < 0.02:
+                degenerate.append((s.name, f"CV={cv:.4f}"))
+            else:
+                healthy.append(s.name)
+        else:
+            healthy.append(s.name)
+
+    if not healthy and degenerate:
+        names = ", ".join(f"'{n}' ({r})" for n, r in degenerate[:3])
+        return QualityCheckResult(
+            check_name="distribution_shape",
+            status="FAIL",
+            detail=f"all measure columns are constant/binary: {names}",
+            metric=float(len(degenerate)),
+        )
+
+    if healthy:
+        best_name = healthy[0]
+        p = profiles.get(best_name)
+        if p and p.unique_count < min_unique:
+            return QualityCheckResult(
+                check_name="distribution_shape",
+                status="WARN",
+                detail=(
+                    f"best measure '{best_name}' has only {p.unique_count} unique values "
+                    f"(threshold {min_unique}) -- may be ordinal, not continuous"
+                ),
+                metric=float(p.unique_count),
+            )
+
+    return QualityCheckResult(
+        check_name="distribution_shape",
+        status="PASS",
+        detail=f"{len(healthy)} measure column(s) with healthy distribution",
+        metric=float(len(healthy)),
+    )
+
+
 def zero_variance(
     df: pd.DataFrame,
     column_specs: list[ColumnSpec],

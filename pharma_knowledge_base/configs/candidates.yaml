@@ -22,6 +22,7 @@ date_candidates:
   - week_end_date
   - week_start_date
   - month_end_date
+  - month_start_date
   - period
   - fill_date
   - fill_month
@@ -47,6 +48,7 @@ date_candidates:
   - activity_date
   - invoice_date
   - diagnosis_date
+  - yearmonth          # YEARMONTH columns: single-token, values are ISO dates "2024-12-01"
 
 measure_candidates:
   - persistency
@@ -110,6 +112,35 @@ measure_candidates:
   - total_rte         # Remote Touchpoint Engagements (count metric)
   - total_calls
   - total_samples
+  # ── HCP activity counts (hcp_monthly / territory_monthly) ──────────────────
+  - total_touches           # total touchpoints per HCP/territory per period
+  - f2f_calls               # count of f2f calls (not a channel — it measures volume)
+  - virtual_calls           # count of virtual calls
+  - email_touches           # count of email touches
+  - active_days             # distinct active call days per period
+  - channel_mix             # channel diversity / breadth count
+  # ── CRM RTE engagement metrics ─────────────────────────────────────────────
+  - rte_delivered           # delivered RTE messages count
+  - rte_opened              # opened RTE count
+  - rte_clicked             # clicked RTE count
+  - days_since_previous_touch   # recency: days since last HCP touchpoint
+  - num_of_additional_attendees # group call attendee count
+  # ── Sales / order volume ───────────────────────────────────────────────────
+  - total_adjusted_qty_sold # net quantity sold after returns (IC sales)
+  - amount                  # transaction revenue/amount
+  - wac                     # wholesale acquisition cost (price measure)
+  - total_volume            # total drug volume (claims datasets)
+  - non_hemodialysis_volume # non-HD patient drug volume
+  - non_hemodialysis_claims # non-HD patient claim count
+  # ── IC compensation / goals ────────────────────────────────────────────────
+  - ic_vials                # incentive compensation vial count
+  - eligible_vials          # IC eligible vials
+  - ttd_vials               # total-to-date vials
+  - baseline_vials          # baseline vial performance
+  - volume_potential        # org/system estimated volume potential
+  - goals                   # sales quota / goals (SAR_GOALS, KAM_GOALS)
+  - points                  # IC points
+  - orders                  # order count (ORG_ORDERS, SYSTEM_ORDERS)
 
 # ── Pharma engagement / promotional channels ─────────────────────────────────
 # Used to gate MMM routing — MMM only fires when channel data is present.
@@ -203,6 +234,7 @@ flag_suffixes:
   - _flag
   - _indicator
   - _ind
+  - _yn               # yes/no binary flags (FIRST_ORDER_DATE_YN, FYTD_FLAG, etc.)
 
 # Business logic hints for unclassified columns.
 # Map the exact column name (or its normalized/lowercase form) to a free-text description.
@@ -232,3 +264,14 @@ segment_candidates:
   - lifecycle_stage
   - anomaly_type
   - bucket
+  # ── HCP / account segmentation ─────────────────────────────────────────────
+  - meeting_type        # type of HCP meeting (f2f / virtual / email / phone)
+  - call_type           # CRM call type classification
+  - call_channel        # CALL_CHANNEL_FORMULA_VOD, CALL_CHANNEL_VOD
+  - interaction_type    # G1_INTERACTION_TYPE (mapped via abbreviation)
+  - presc_or_non_presc  # prescriber vs non-prescriber classification
+  - hcp_segment         # HCP segmentation label (HCP_COSELA_SEGMENT etc.)
+  - account_type        # account type (hospital / clinic / IDN / etc.)
+  - decile              # ordinal decile group 1–10; token-boundary catches *_DECILE* columns
+  - product_type        # product / brand type classification
+  - alignment_type      # sales alignment type (SAR / KAM / etc.)

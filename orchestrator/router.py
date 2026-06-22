@@ -18,6 +18,8 @@ from pathlib import Path
 
 from collections import defaultdict
 
+import pandas as pd
+
 from named_model_resolution.catalog_parser import parse_catalog
 from named_model_resolution.classifier import classify
 from named_model_resolution.column_matcher import ColumnMatcher
@@ -29,6 +31,35 @@ from .profiler import Profiler
 
 # Subtypes that carry routing signal (exclude low-information subtypes)
 _ROUTING_SUBTYPES = {"date", "measure", "geography", "segment", "channel", "key", "flag"}
+
+
+def _coerce_numeric_schema(
+    schema: dict[str, str],
+    sample: pd.DataFrame,
+    min_numeric_frac: float = 0.9,
+) -> dict[str, str]:
+    """
+    Patch schema dtype for object columns where all values are present and
+    most values parse as numbers.
+
+    Heuristic: dtype == "object"  AND  null_pct == 0  AND  >= min_numeric_frac
+    of values convert successfully with pd.to_numeric(errors="coerce").
+
+    Columns that pass are reported as "float64" so the column matcher treats
+    them as numeric rather than string/categorical — preventing string measures
+    from being silently classified as dimension_attribute or unknown.
+    """
+    patched = dict(schema)
+    for col, dtype in schema.items():
+        if dtype != "object" or col not in sample.columns:
+            continue
+        series = sample[col]
+        if series.isna().any():
+            continue  # must have no missing values
+        numeric_frac = pd.to_numeric(series, errors="coerce").notna().mean()
+        if numeric_frac >= min_numeric_frac:
+            patched[col] = "float64"
+    return patched
 
 
 def _routing_signature(result: RouterResult) -> frozenset[str]:
@@ -106,6 +137,7 @@ class Router:
             try:
                 sample = self._connector.sample_rows(name, n=500)
                 unique_counts = {col: int(sample[col].nunique()) for col in sample.columns}
+                schema = _coerce_numeric_schema(schema, sample)
             except Exception:
                 sample = None
                 unique_counts = {}
