@@ -1,0 +1,193 @@
+{
+  "target_col": "sales",
+  "week_col": "week",
+  "hcp_id_col": "hcp_id",
+  "product_col": "product",
+  "product_value": "CLOBETASOL PROP",
+  "is_anomaly_col": "is_anomaly",
+  "lifecycle_col": "lifecycle_stage",
+  "fourier_k": 2,
+  "fourier_period": 52,
+  "hill_alpha_field": 0.8,
+  "hill_alpha_broadcast": 2.0,
+  "train_weeks": 180,
+  "organic_cps": null,
+  "true_effects": null,
+  "channels": [
+    {
+      "name": "f2f",
+      "group": "field",
+      "agg": "sum",
+      "decay": 0.3,
+      "hill_alpha": null
+    },
+    {
+      "name": "f2f_short_call",
+      "group": "field",
+      "agg": "sum",
+      "decay": 0.3,
+      "hill_alpha": null
+    },
+    {
+      "name": "f2f_accompanied",
+      "group": "field",
+      "agg": "sum",
+      "decay": 0.3,
+      "hill_alpha": null
+    },
+    {
+      "name": "phone_call",
+      "group": "field",
+      "agg": "sum",
+      "decay": 0.3,
+      "hill_alpha": null
+    },
+    {
+      "name": "total_calls",
+      "group": "field",
+      "agg": "sum",
+      "decay": 0.3,
+      "hill_alpha": null
+    },
+    {
+      "name": "samples",
+      "group": "field",
+      "agg": "sum",
+      "decay": 0.3,
+      "hill_alpha": null
+    },
+    {
+      "name": "speaker",
+      "group": "field",
+      "agg": "sum",
+      "decay": 0.3,
+      "hill_alpha": null
+    },
+    {
+      "name": "email_delivered",
+      "group": "field",
+      "agg": "sum",
+      "decay": 0.3,
+      "hill_alpha": null
+    },
+    {
+      "name": "email_opens",
+      "group": "field",
+      "agg": "sum",
+      "decay": 0.3,
+      "hill_alpha": null
+    },
+    {
+      "name": "email_clicked",
+      "group": "field",
+      "agg": "sum",
+      "decay": 0.3,
+      "hill_alpha": null
+    },
+    {
+      "name": "tp_email_delivered",
+      "group": "field",
+      "agg": "sum",
+      "decay": 0.3,
+      "hill_alpha": null
+    },
+    {
+      "name": "tp_email_opens",
+      "group": "field",
+      "agg": "sum",
+      "decay": 0.3,
+      "hill_alpha": null
+    },
+    {
+      "name": "tp_email_clicked",
+      "group": "field",
+      "agg": "sum",
+      "decay": 0.3,
+      "hill_alpha": null
+    },
+    {
+      "name": "doximity_opens",
+      "group": "field",
+      "agg": "sum",
+      "decay": 0.3,
+      "hill_alpha": null
+    },
+    {
+      "name": "epocrates_opens",
+      "group": "field",
+      "agg": "sum",
+      "decay": 0.3,
+      "hill_alpha": null
+    },
+    {
+      "name": "sermo_impressions",
+      "group": "field",
+      "agg": "sum",
+      "decay": 0.3,
+      "hill_alpha": null
+    },
+    {
+      "name": "ehr_impressions",
+      "group": "field",
+      "agg": "sum",
+      "decay": 0.3,
+      "hill_alpha": null
+    },
+    {
+      "name": "audio_impressions",
+      "group": "field",
+      "agg": "sum",
+      "decay": 0.3,
+      "hill_alpha": null
+    },
+    {
+      "name": "standard_display_impressions",
+      "group": "field",
+      "agg": "sum",
+      "decay": 0.3,
+      "hill_alpha": null
+    },
+    {
+      "name": "standard_display_clicks",
+      "group": "field",
+      "agg": "sum",
+      "decay": 0.3,
+      "hill_alpha": null
+    },
+    {
+      "name": "programmatic_display_impressions",
+      "group": "field",
+      "agg": "sum",
+      "decay": 0.3,
+      "hill_alpha": null
+    },
+    {
+      "name": "programmatic_video_impressions",
+      "group": "field",
+      "agg": "sum",
+      "decay": 0.3,
+      "hill_alpha": null
+    },
+    {
+      "name": "social_impressions",
+      "group": "field",
+      "agg": "sum",
+      "decay": 0.3,
+      "hill_alpha": null
+    },
+    {
+      "name": "tv_grps",
+      "group": "field",
+      "agg": "sum",
+      "decay": 0.3,
+      "hill_alpha": null
+    },
+    {
+      "name": "competitor_spend",
+      "group": "competitor",
+      "agg": "mean",
+      "decay": 0.0,
+      "hill_alpha": null
+    }
+  ]
+}
